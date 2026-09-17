@@ -21,7 +21,7 @@ interface LicenseKey {
   appId: string;
   durationDays: number;
   level: number;
-  status: 'unused' | 'used' | 'banned';
+  status: 'unused' | 'used' | 'banned' | 'frozen';
   usedBy?: string;
   usedAt?: string;
   hwid?: string;
@@ -34,15 +34,12 @@ interface AuthUser {
   username: string;
   password?: string;
   appId: string;
+  durationDays: number;
+  level: number;
   hwid?: string;
   ip?: string;
   created: string;
   lastLogin: string;
-  subscriptions: {
-    subscription: string;
-    expiry: string;
-    level: number;
-  }[];
   banned: boolean;
   banReason?: string;
 }
@@ -79,7 +76,7 @@ async function startServer() {
 
   app.use(express.json());
 
-  // Global CORS Middleware for external frontend domains (like Vercel)
+  // Global CORS Middleware
   app.use((req, res, next) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
@@ -90,70 +87,48 @@ async function startServer() {
     next();
   });
 
-  let applications: Application[] = [
-    {
-      id: "app_default",
-      name: "RedZone Core App",
-      secret: "rz_sec_default_secret_99",
-      ownerid: "usr_redzone",
-      version: "1.0.0",
-      status: "active",
-      createdAt: new Date().toISOString(),
-      totalUsers: 1,
-      activeLicenses: 5,
-      downloadLink: "https://redzone.auth/downloads/loader.exe"
-    }
-  ];
-
-  let licenseKeys: LicenseKey[] = [
-    {
-      id: "key_default_1",
-      key: "REDZONE-LIFETIME-2026-PRO",
-      appId: "app_default",
-      durationDays: 365,
-      level: 2,
-      status: "unused",
-      createdAt: new Date().toISOString(),
-      note: "Default pre-generated key"
-    }
-  ];
-
-  let authUsers: AuthUser[] = [
-    {
-      id: "u_default",
-      username: "admin",
-      password: "password123",
-      appId: "app_default",
-      hwid: "HWID-TEST-PC",
-      ip: "127.0.0.1",
-      created: new Date().toISOString(),
-      lastLogin: new Date().toISOString(),
-      subscriptions: [
-        {
-          subscription: "VIP Lifetime Access",
-          expiry: new Date(Date.now() + 365 * 86400000).toISOString(),
-          level: 2
-        }
-      ],
-      banned: false
-    }
-  ];
-
-  let subscriptionPlans: SubscriptionPlan[] = [
-    { id: "sub_1", appId: "app_default", name: "VIP Lifetime Access", level: 2, defaultDays: 365 },
-    { id: "sub_2", appId: "app_default", name: "Standard Access", level: 1, defaultDays: 30 }
-  ];
-
+  // Fresh Start: 0 applications initially until developer logs in and creates one
+  let applications: Application[] = [];
+  let licenseKeys: LicenseKey[] = [];
+  let authUsers: AuthUser[] = [];
+  let subscriptionPlans: SubscriptionPlan[] = [];
   let webhooks: WebhookConfig[] = [];
   let auditLogs: AuditLog[] = [
     {
       id: "log_init",
       timestamp: new Date().toISOString(),
       type: "admin",
-      message: "REDZONE Auth server initialized with default app and test account (admin / password123).",
+      message: "REDZONE Auth server initialized. Please register or login as developer to create applications.",
       appId: "system"
     }
   ];
+
+  // Developer Admin Accounts (for panel login)
+  let developers: { username: string; password: string }[] = [
+    { username: "admin", password: "password123" }
+  ];
+
+  // Developer Auth Endpoints
+  app.post("/api/v1/dev/login", (req, res) => {
+    const { username, password } = req.body;
+    const dev = developers.find(d => d.username === username && d.password === password);
+    if (!dev) {
+      return res.json({ success: false, message: "Invalid developer username or password." });
+    }
+    res.json({ success: true, message: "Developer login successful!" });
+  });
+
+  app.post("/api/v1/dev/register", (req, res) => {
+    const { username, password } = req.body;
+    if (!username || !password) {
+      return res.json({ success: false, message: "Username and password required." });
+    }
+    if (developers.some(d => d.username === username)) {
+      return res.json({ success: false, message: "Developer username already exists." });
+    }
+    developers.push({ username, password });
+    res.json({ success: true, message: "Developer registered successfully!" });
+  });
 
   // API Routes
   app.get("/api/v1/apps", (req, res) => {
@@ -239,35 +214,107 @@ async function startServer() {
     res.json({ success: true, keys: generated });
   });
 
+  // Advanced License Key actions: delete, lock, unlock, ban, freeze
+  app.post("/api/v1/licenses/:id/action", (req, res) => {
+    const { id } = req.params;
+    const { action } = req.body; // 'delete' | 'lock' | 'unlock' | 'ban' | 'freeze' | 'unfreeze'
+    const key = licenseKeys.find(k => k.id === id);
+
+    if (!key) {
+      return res.status(404).json({ success: false, message: "Key not found" });
+    }
+
+    if (action === 'delete') {
+      licenseKeys = licenseKeys.filter(k => k.id !== id);
+    } else if (action === 'lock') {
+      key.hwid = "LOCKED_HWID_MANUAL";
+    } else if (action === 'unlock') {
+      key.hwid = undefined;
+      key.status = 'unused';
+      key.usedBy = undefined;
+    } else if (action === 'ban') {
+      key.status = 'banned';
+    } else if (action === 'freeze') {
+      key.status = 'frozen';
+    } else if (action === 'unfreeze') {
+      key.status = key.hwid ? 'used' : 'unused';
+    }
+
+    res.json({ success: true, key });
+  });
+
   app.delete("/api/v1/licenses/:id", (req, res) => {
     const { id } = req.params;
     licenseKeys = licenseKeys.filter(k => k.id !== id);
     res.json({ success: true });
   });
 
+  // User / Pass Creator Endpoints
   app.get("/api/v1/users", (req, res) => {
     const { appId } = req.query;
     const filtered = appId ? authUsers.filter(u => u.appId === appId) : authUsers;
     res.json({ success: true, users: filtered });
   });
 
-  app.post("/api/v1/users/:id/ban", (req, res) => {
-    const { id } = req.params;
-    const { banned, reason } = req.body;
-    const user = authUsers.find(u => u.id === id);
-    if (user) {
-      user.banned = banned;
-      user.banReason = reason || "Violated terms of service";
-      auditLogs.unshift({
-        id: `log_${Date.now()}`,
-        timestamp: new Date().toISOString(),
-        type: "admin",
-        message: `User '${user.username}' was ${banned ? 'banned' : 'unbanned'}`,
-        appId: user.appId
-      });
-      return res.json({ success: true, user });
+  app.post("/api/v1/users/create", (req, res) => {
+    const { appId, username, password, durationDays = 30, level = 1 } = req.body;
+    if (!username || !password) {
+      return res.json({ success: false, message: "Username and password required." });
     }
-    res.status(404).json({ success: false, message: "User not found" });
+    const targetAppId = appId || applications[0]?.id;
+    if (authUsers.some(u => u.username === username && u.appId === targetAppId)) {
+      return res.json({ success: false, message: "Username already exists for this application." });
+    }
+
+    const newUser: AuthUser = {
+      id: `u_${Date.now()}`,
+      username,
+      password,
+      appId: targetAppId,
+      durationDays: Number(durationDays),
+      level: Number(level),
+      created: new Date().toISOString(),
+      lastLogin: "Never",
+      banned: false
+    };
+
+    authUsers.unshift(newUser);
+    const app = applications.find(a => a.id === targetAppId);
+    if (app) app.totalUsers += 1;
+
+    auditLogs.unshift({
+      id: `log_${Date.now()}`,
+      timestamp: new Date().toISOString(),
+      type: "admin",
+      message: `Created user account '${username}' with ${durationDays} days access`,
+      appId: targetAppId
+    });
+
+    res.json({ success: true, user: newUser });
+  });
+
+  app.post("/api/v1/users/:id/action", (req, res) => {
+    const { id } = req.params;
+    const { action, reason } = req.body; // 'delete' | 'ban' | 'unban' | 'reset_hwid'
+    const user = authUsers.find(u => u.id === id);
+
+    if (!user) {
+      return res.status(404).json({ success: false, message: "User not found" });
+    }
+
+    if (action === 'delete') {
+      authUsers = authUsers.filter(u => u.id !== id);
+    } else if (action === 'ban') {
+      user.banned = true;
+      user.banReason = reason || "Banned by developer";
+    } else if (action === 'unban') {
+      user.banned = false;
+      user.banReason = undefined;
+    } else if (action === 'reset_hwid') {
+      user.hwid = undefined;
+    }
+
+    res.json({ success: true, user });
   });
 
   app.get("/api/v1/subscriptions", (req, res) => {
@@ -286,190 +333,98 @@ async function startServer() {
     res.json({ success: true, logs: auditLogs });
   });
 
-  // REDZONE Auth Client API Endpoint Simulation (KeyAuth compatible REST interface for Web, C++, C#, Python, PHP)
+  // REDZONE Auth Client API Endpoint (KeyAuth compatible: supports license keys & user/pass, no HWID mandatory)
   app.post("/api/v1/client/auth", (req, res) => {
     const { type, key, username, password, hwid, name, ownerid } = req.body;
     const clientIp = req.ip || "127.0.0.1";
 
-    let app = applications.find(a => a.name.toLowerCase() === (name || "").toLowerCase()) || applications[0];
+    let app = applications.find(a => a.name.toLowerCase() === (name || "").toLowerCase());
+    if (!app && name) {
+      app = applications.find(a => a.name.toLowerCase().includes(name.toLowerCase()));
+    }
     if (!app) {
       app = applications[0];
     }
 
-    if (type === "register") {
-      if (!username || !password) {
-        return res.json({ success: false, message: "Username and password are required for registration." });
-      }
-      const existing = authUsers.find(u => u.username === username && u.appId === app.id);
-      if (existing) {
-        return res.json({ success: false, message: "Username is already taken." });
-      }
-
-      const newUser: AuthUser = {
-        id: `u_${Date.now()}`,
-        username,
-        password,
-        appId: app.id,
-        hwid: hwid || "HWID-DEFAULT",
-        ip: clientIp,
-        created: new Date().toISOString(),
-        lastLogin: new Date().toISOString(),
-        subscriptions: [
-          {
-            subscription: "Standard Access",
-            expiry: new Date(Date.now() + 30 * 86400000).toISOString(),
-            level: 1
-          }
-        ],
-        banned: false
-      };
-      authUsers.push(newUser);
-      app.totalUsers += 1;
-
-      auditLogs.unshift({
-        id: `log_${Date.now()}`,
-        timestamp: new Date().toISOString(),
-        type: "auth",
-        message: `New user account registered: '${username}'`,
-        ip: clientIp,
-        appId: app.id
-      });
-
-      return res.json({ success: true, message: "Account registered successfully! You can now sign in." });
+    if (!app) {
+      return res.json({ success: false, message: "Application not found or invalid app name." });
     }
 
-    if (type === "login") {
+    // 1. User & Pass Login / Validation
+    if (type === 'login' || type === 'user') {
       if (!username || !password) {
-        return res.json({ success: false, message: "Username and password are required for login." });
+        return res.json({ success: false, message: "Username and password required." });
       }
       const user = authUsers.find(u => u.username === username && u.appId === app.id);
       if (!user || user.password !== password) {
         return res.json({ success: false, message: "Invalid username or password." });
       }
       if (user.banned) {
-        return res.json({ success: false, message: `Account is banned: ${user.banReason}` });
-      }
-
-      // HWID Lock validation if user already bound to another HWID
-      if (user.hwid && hwid && user.hwid !== hwid) {
-        return res.json({ success: false, message: "Hardware ID (HWID) mismatch. Account is locked to another PC. Please reset HWID." });
+        return res.json({ success: false, message: `Account is banned: ${user.banReason || 'Violation'}` });
       }
 
       user.lastLogin = new Date().toISOString();
       if (hwid) user.hwid = hwid;
 
-      auditLogs.unshift({
-        id: `log_${Date.now()}`,
-        timestamp: new Date().toISOString(),
-        type: "auth",
-        message: `User '${username}' logged in successfully`,
-        ip: clientIp,
-        appId: app.id
-      });
-
       return res.json({
         success: true,
-        message: "Logged in successfully!",
+        message: "Authenticated successfully via User/Pass!",
         userinfo: {
           username: user.username,
-          subscriptions: user.subscriptions,
-          ip: clientIp,
-          hwid: user.hwid,
-          createdate: user.created,
-          lastlogin: user.lastLogin
-        }
-      });
-    }
-
-    if (type === "reset_hwid") {
-      if (!username || !password) {
-        return res.json({ success: false, message: "Username and password are required to reset HWID." });
-      }
-      const user = authUsers.find(u => u.username === username && u.appId === app.id);
-      if (!user || user.password !== password) {
-        return res.json({ success: false, message: "Invalid username or password." });
-      }
-
-      user.hwid = hwid || "HWID-NEW-PC";
-      auditLogs.unshift({
-        id: `log_${Date.now()}`,
-        timestamp: new Date().toISOString(),
-        type: "auth",
-        message: `HWID reset successfully for user '${username}'`,
-        ip: clientIp,
-        appId: app.id
-      });
-
-      return res.json({ success: true, message: "Hardware ID (HWID) reset successfully! You can now log in from this PC." });
-    }
-
-    if (type === "license") {
-      const foundKey = licenseKeys.find(k => k.key === key && k.appId === app.id);
-      if (!foundKey) {
-        return res.json({ success: false, message: "The specified license key does not exist or is invalid." });
-      }
-      if (foundKey.status === "banned") {
-        return res.json({ success: false, message: "This license key has been banned." });
-      }
-      if (foundKey.status === "used" && foundKey.hwid && foundKey.hwid !== hwid) {
-        return res.json({ success: false, message: "Hardware ID (HWID) mismatch. Key is bound to another PC." });
-      }
-
-      foundKey.status = "used";
-      foundKey.hwid = hwid || "HWID-PC";
-      foundKey.usedAt = new Date().toISOString();
-
-      let user = authUsers.find(u => u.hwid === hwid && u.appId === app.id);
-      if (!user) {
-        user = {
-          id: `u_${Date.now()}`,
-          username: foundKey.usedBy || `User_${Math.floor(1000 + Math.random() * 9000)}`,
-          appId: app.id,
-          hwid: hwid || "HWID-PC",
-          ip: clientIp,
-          created: new Date().toISOString(),
-          lastLogin: new Date().toISOString(),
           subscriptions: [
             {
-              subscription: `Level ${foundKey.level} Access`,
-              expiry: new Date(Date.now() + foundKey.durationDays * 86400000).toISOString(),
-              level: foundKey.level
+              subscription: `Level ${user.level} Access`,
+              expiry: new Date(Date.now() + user.durationDays * 86400000).toISOString(),
+              level: user.level
             }
           ],
-          banned: false
-        };
-        authUsers.push(user);
-        app.totalUsers += 1;
-      } else {
-        user.lastLogin = new Date().toISOString();
-      }
-
-      foundKey.usedBy = user.username;
-
-      auditLogs.unshift({
-        id: `log_${Date.now()}`,
-        timestamp: new Date().toISOString(),
-        type: "auth",
-        message: `License key authenticated for user '${user.username}'`,
-        ip: clientIp,
-        appId: app.id
-      });
-
-      return res.json({
-        success: true,
-        message: "Successfully authenticated with REDZONE Auth!",
-        userinfo: {
-          username: user.username,
-          subscriptions: user.subscriptions,
           ip: clientIp,
-          hwid: user.hwid,
+          hwid: user.hwid || "N/A",
           createdate: user.created,
           lastlogin: user.lastLogin
         }
       });
     }
 
-    res.status(400).json({ success: false, message: "Invalid auth type specified." });
+    // 2. License Key Validation (Matches user JS snippet: type: 'license', key, name, ownerid)
+    const foundKey = licenseKeys.find(k => k.key === key && k.appId === app.id);
+    if (!foundKey) {
+      return res.json({ success: false, message: "Invalid license key or key not found." });
+    }
+    if (foundKey.status === 'banned') {
+      return res.json({ success: false, message: "This license key is banned." });
+    }
+    if (foundKey.status === 'frozen') {
+      return res.json({ success: false, message: "This license key is currently frozen." });
+    }
+
+    foundKey.status = 'used';
+    if (hwid) {
+      foundKey.hwid = hwid;
+    } else if (!foundKey.hwid) {
+      foundKey.hwid = "BROWSER_CLIENT";
+    }
+    foundKey.usedAt = new Date().toISOString();
+    foundKey.usedBy = foundKey.usedBy || "ClientUser";
+
+    return res.json({
+      success: true,
+      message: "Successfully authenticated with REDZONE Auth!",
+      userinfo: {
+        username: foundKey.usedBy,
+        subscriptions: [
+          {
+            subscription: `Level ${foundKey.level} Access (${foundKey.durationDays} Days)`,
+            expiry: new Date(Date.now() + foundKey.durationDays * 86400000).toISOString(),
+            level: foundKey.level
+          }
+        ],
+        ip: clientIp,
+        hwid: foundKey.hwid,
+        createdate: foundKey.createdAt,
+        lastlogin: new Date().toISOString()
+      }
+    });
   });
 
   // Vite middleware setup

@@ -17,7 +17,7 @@ export interface LicenseKey {
   appId: string;
   durationDays: number;
   level: number;
-  status: 'unused' | 'used' | 'banned';
+  status: 'unused' | 'used' | 'banned' | 'frozen';
   usedBy?: string;
   usedAt?: string;
   hwid?: string;
@@ -28,12 +28,15 @@ export interface LicenseKey {
 export interface AuthUser {
   id: string;
   username: string;
+  password?: string;
   appId: string;
+  durationDays: number;
+  level: number;
   hwid?: string;
   ip?: string;
   created: string;
   lastLogin: string;
-  subscriptions: {
+  subscriptions?: {
     subscription: string;
     expiry: string;
     level: number;

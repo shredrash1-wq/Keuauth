@@ -11,8 +11,8 @@ import {
   ShieldAlert,
   Terminal,
   ExternalLink,
-  Lock,
-  X
+  X,
+  LogOut
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -21,15 +21,15 @@ interface SidebarProps {
   onOpenApiTester: () => void;
   mobileOpen: boolean;
   setMobileOpen: (open: boolean) => void;
+  onLogout: () => void;
 }
 
-export const Sidebar: React.FC<SidebarProps> = ({ currentTab, setCurrentTab, onOpenApiTester, mobileOpen, setMobileOpen }) => {
+export const Sidebar: React.FC<SidebarProps> = ({ currentTab, setCurrentTab, onOpenApiTester, mobileOpen, setMobileOpen, onLogout }) => {
   const menuItems = [
-    { id: 'dashboard', label: 'Admin Dashboard', icon: LayoutDashboard },
-    { id: 'client_portal', label: 'Client Auth Portal', icon: Lock },
+    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'applications', label: 'Applications', icon: Layers },
     { id: 'licenses', label: 'License Keys', icon: KeyRound },
-    { id: 'users', label: 'Users', icon: Users },
+    { id: 'users', label: 'Users & Passwords', icon: Users },
     { id: 'subscriptions', label: 'Subscriptions', icon: CreditCard },
     { id: 'apidocs', label: 'API & Code Snippets', icon: Code },
     { id: 'webhooks', label: 'Webhooks', icon: Webhook },
@@ -59,7 +59,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, setCurrentTab, onO
               <h1 className="font-bold text-white tracking-wider flex items-center gap-1.5 text-lg">
                 REDZONE<span className="text-red-500">AUTH</span>
               </h1>
-              <p className="text-[10px] text-red-400/70 font-mono tracking-widest uppercase">Secured Licensing</p>
+              <p className="text-[10px] text-red-400/70 font-mono tracking-widest uppercase">KeyAuth Panel</p>
             </div>
           </div>
           <button 
@@ -73,7 +73,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, setCurrentTab, onO
         {/* Navigation Links */}
         <div className="flex-1 py-6 px-4 space-y-1.5 overflow-y-auto custom-scrollbar">
           <div className="px-3 mb-2 text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
-            Navigation
+            Developer Menu
           </div>
           {menuItems.map((item) => {
             const Icon = item.icon;
@@ -101,8 +101,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, setCurrentTab, onO
           })}
         </div>
 
-        {/* API Tester Quick Launcher */}
-        <div className="p-4 border-t border-red-950/40 bg-slate-900/40">
+        {/* API Tester & Logout */}
+        <div className="p-4 border-t border-red-950/40 bg-slate-900/40 space-y-2">
           <button
             onClick={() => {
               onOpenApiTester();
@@ -113,18 +113,14 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, setCurrentTab, onO
             <Terminal className="w-4 h-4" />
             <span>Client API Tester</span>
           </button>
-          <div className="mt-3 flex items-center justify-between text-[11px] text-slate-500 px-1 font-mono">
-            <span>API v1.2 Active</span>
-            <a 
-              href="https://github.com/KeyAuth/KeyAuth-Source-Code" 
-              target="_blank" 
-              rel="noreferrer"
-              className="hover:text-red-400 flex items-center gap-1 transition-colors"
-            >
-              <span>KeyAuth Ref</span>
-              <ExternalLink className="w-3 h-3" />
-            </a>
-          </div>
+          
+          <button
+            onClick={onLogout}
+            className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 font-medium text-xs rounded-lg transition-all"
+          >
+            <LogOut className="w-3.5 h-3.5 text-red-400" />
+            <span>Developer Sign Out</span>
+          </button>
         </div>
       </aside>
     </>
