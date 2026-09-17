@@ -1,6 +1,6 @@
 import React from 'react';
 import { Application, LicenseKey, AuthUser, AuditLog } from '../types';
-import { Users, KeyRound, ShieldCheck, Activity, Copy, Check, ExternalLink, ArrowUpRight, Cpu } from 'lucide-react';
+import { Users, KeyRound, ShieldCheck, Activity, Copy, Check, ArrowUpRight, Cpu, Plus, Layers } from 'lucide-react';
 
 interface DashboardViewProps {
   selectedApp: Application | null;
@@ -13,7 +13,28 @@ interface DashboardViewProps {
 export const DashboardView: React.FC<DashboardViewProps> = ({ selectedApp, licenses, users, logs, onNavigate }) => {
   const [copied, setCopied] = React.useState<string | null>(null);
 
-  if (!selectedApp) return <div className="p-8 text-slate-400">No application selected.</div>;
+  if (!selectedApp) {
+    return (
+      <div className="p-8 max-w-4xl mx-auto text-center py-20 space-y-6">
+        <div className="w-16 h-16 rounded-2xl bg-red-600/20 border border-red-500/40 flex items-center justify-center text-red-500 mx-auto">
+          <Layers className="w-8 h-8" />
+        </div>
+        <div>
+          <h2 className="text-2xl font-extrabold text-white">No Application Created Yet</h2>
+          <p className="text-slate-400 text-sm mt-1 max-w-md mx-auto">
+            REDZONE Auth starts fresh with 0 applications. Create your first application to begin generating license keys and managing users.
+          </p>
+        </div>
+        <button
+          onClick={() => onNavigate('applications')}
+          className="inline-flex items-center gap-2 px-6 py-3 bg-red-600 hover:bg-red-500 text-white font-medium text-sm rounded-xl shadow-lg shadow-red-950 transition-all"
+        >
+          <Plus className="w-4 h-4" />
+          <span>Create Your First Application</span>
+        </button>
+      </div>
+    );
+  }
 
   const appLicenses = licenses.filter(l => l.appId === selectedApp.id);
   const appUsers = users.filter(u => u.appId === selectedApp.id);
@@ -27,9 +48,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ selectedApp, licen
   };
 
   return (
-    <div className="p-8 space-y-8 max-w-7xl mx-auto">
+    <div className="p-4 sm:p-8 space-y-6 sm:space-y-8 max-w-7xl mx-auto">
       {/* Welcome Banner */}
-      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-slate-900 via-slate-900 to-red-950/40 border border-red-950/60 p-8 shadow-xl">
+      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-slate-900 via-slate-900 to-red-950/40 border border-red-950/60 p-6 sm:p-8 shadow-xl">
         <div className="absolute -right-10 -bottom-10 w-64 h-64 bg-red-600/10 rounded-full blur-3xl pointer-events-none" />
         <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
           <div>
@@ -37,7 +58,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ selectedApp, licen
               <Cpu className="w-3.5 h-3.5" />
               <span>Active App: {selectedApp.name} (v{selectedApp.version})</span>
             </div>
-            <h1 className="text-3xl font-extrabold text-white tracking-tight">
+            <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
               REDZONE Auth Developer Console
             </h1>
             <p className="text-slate-400 text-sm mt-1 max-w-xl">
@@ -55,7 +76,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ selectedApp, licen
               onClick={() => onNavigate('apidocs')}
               className="px-5 py-2.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 font-medium text-sm rounded-xl transition-all"
             >
-              View API Docs
+              API Docs
             </button>
           </div>
         </div>
@@ -72,9 +93,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ selectedApp, licen
             <div className="w-12 h-12 rounded-xl bg-red-600/10 border border-red-500/20 flex items-center justify-center text-red-500 group-hover:scale-110 transition-transform">
               <Users className="w-6 h-6" />
             </div>
-          </div>
-          <div className="mt-4 flex items-center gap-1.5 text-xs text-emerald-400 font-medium">
-            <span>+12% this week</span>
           </div>
         </div>
 
@@ -103,9 +121,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ selectedApp, licen
               <ShieldCheck className="w-6 h-6" />
             </div>
           </div>
-          <div className="mt-4 flex items-center gap-1.5 text-xs text-slate-400 font-medium">
-            <span>Encrypted endpoints active</span>
-          </div>
         </div>
 
         <div className="bg-slate-900/80 border border-red-950/40 rounded-2xl p-6 relative overflow-hidden group hover:border-red-500/40 transition-all">
@@ -117,9 +132,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ selectedApp, licen
             <div className="w-12 h-12 rounded-xl bg-red-600/10 border border-red-500/20 flex items-center justify-center text-red-500 group-hover:scale-110 transition-transform">
               <Activity className="w-6 h-6" />
             </div>
-          </div>
-          <div className="mt-4 flex items-center gap-1.5 text-xs text-emerald-400 font-medium">
-            <span>99.99% Uptime</span>
           </div>
         </div>
       </div>
@@ -160,32 +172,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ selectedApp, licen
             </div>
             <p className="font-mono text-sm text-red-400 truncate">{selectedApp.secret}</p>
           </div>
-        </div>
-      </div>
-
-      {/* Recent Audit Logs */}
-      <div className="bg-slate-900/90 border border-red-950/60 rounded-2xl p-6 shadow-xl">
-        <div className="flex items-center justify-between mb-6">
-          <h3 className="text-lg font-bold text-white">Recent Authentication & License Activity</h3>
-          <button onClick={() => onNavigate('settings')} className="text-xs font-medium text-red-400 hover:text-red-300 flex items-center gap-1">
-            <span>View All Logs</span>
-            <ArrowUpRight className="w-3.5 h-3.5" />
-          </button>
-        </div>
-
-        <div className="space-y-3">
-          {logs.slice(0, 5).map((log) => (
-            <div key={log.id} className="flex items-center justify-between p-3.5 rounded-xl bg-slate-950 border border-slate-800/80 text-sm">
-              <div className="flex items-center gap-3">
-                <div className={`w-2 h-2 rounded-full ${log.type === 'auth' ? 'bg-emerald-500' : log.type === 'license' ? 'bg-red-500' : 'bg-amber-500'}`} />
-                <span className="text-slate-300 font-mono text-xs">{log.message}</span>
-              </div>
-              <div className="flex items-center gap-4">
-                {log.ip && <span className="text-xs text-slate-500 font-mono hidden sm:inline">{log.ip}</span>}
-                <span className="text-xs text-slate-500 font-mono">{new Date(log.timestamp).toLocaleTimeString()}</span>
-              </div>
-            </div>
-          ))}
         </div>
       </div>
     </div>

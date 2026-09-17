@@ -1,0 +1,45 @@
+{
+  "entities": {
+    "Application": {
+      "name": "string",
+      "secret": "string",
+      "ownerid": "string",
+      "version": "string",
+      "status": "string",
+      "createdAt": "string",
+      "totalUsers": "number",
+      "activeLicenses": "number",
+      "downloadLink": "string"
+    },
+    "LicenseKey": {
+      "key": "string",
+      "appId": "string",
+      "durationDays": "number",
+      "level": "number",
+      "status": "string",
+      "usedBy": "string",
+      "usedAt": "string",
+      "hwid": "string",
+      "createdAt": "string",
+      "note": "string"
+    },
+    "AuthUser": {
+      "username": "string",
+      "appId": "string",
+      "hwid": "string",
+      "ip": "string",
+      "created": "string",
+      "lastLogin": "string",
+      "banned": "boolean",
+      "banReason": "string"
+    },
+    "AuditLog": {
+      "timestamp": "string",
+      "type": "string",
+      "message": "string",
+      "ip": "string",
+      "appId": "string"
+    }
+  },
+  "securityRules": "rules_version = '2';\nservice cloud.firestore {\n  match /databases/{database}/documents {\n    match /{document=**} {\n      allow read, write: if true;\n    }\n  }\n}"
+}

@@ -12,117 +12,24 @@ import { WebhooksView } from './components/WebhooksView';
 import { SettingsView } from './components/SettingsView';
 import { ApiTesterModal } from './components/ApiTesterModal';
 import { ClientAuthPortal } from './components/ClientAuthPortal';
+import { auth, db } from './lib/firebase';
+import { signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 
 export default function App() {
   const [currentTab, setCurrentTab] = useState('dashboard');
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [applications, setApplications] = useState<Application[]>([
-    {
-      id: "app_1",
-      name: "RedZone Loader v2",
-      secret: "rz_sec_99a8b7c6d5e4f3210",
-      ownerid: "usr_redzone_admin",
-      version: "2.1.0",
-      status: "active",
-      createdAt: new Date(Date.now() - 86400000 * 15).toISOString(),
-      totalUsers: 142,
-      activeLicenses: 89,
-      downloadLink: "https://redzone.auth/downloads/loader-v2.exe"
-    },
-    {
-      id: "app_2",
-      name: "Apex Vanguard Suite",
-      secret: "rz_sec_1122334455667788",
-      ownerid: "usr_redzone_admin",
-      version: "1.0.4",
-      status: "active",
-      createdAt: new Date(Date.now() - 86400000 * 5).toISOString(),
-      totalUsers: 54,
-      activeLicenses: 41,
-      downloadLink: "https://redzone.auth/downloads/vanguard.zip"
-    }
-  ]);
-  const [selectedApp, setSelectedApp] = useState<Application | null>(applications[0]);
-  const [licenses, setLicenses] = useState<LicenseKey[]>([
-    {
-      id: "key_1",
-      key: "REDZONE-LIFETIME-992A-44B1-X89Z",
-      appId: "app_1",
-      durationDays: 365,
-      level: 2,
-      status: "used",
-      usedBy: "cyber_ninja",
-      usedAt: new Date(Date.now() - 86400000 * 2).toISOString(),
-      hwid: "HWID-8849-XYZ-091",
-      createdAt: new Date(Date.now() - 86400000 * 10).toISOString(),
-      note: "VIP Giveaway key"
-    },
-    {
-      id: "key_2",
-      key: "REDZONE-MONTHLY-554C-22D9-K33L",
-      appId: "app_1",
-      durationDays: 30,
-      level: 1,
-      status: "unused",
-      createdAt: new Date(Date.now() - 86400000 * 1).toISOString(),
-      note: "Store purchase #1024"
-    },
-    {
-      id: "key_3",
-      key: "REDZONE-WEEKLY-771B-99E2-P11Q",
-      appId: "app_2",
-      durationDays: 7,
-      level: 1,
-      status: "unused",
-      createdAt: new Date(Date.now()).toISOString(),
-      note: "Trial key batch"
-    }
-  ]);
-  const [users, setUsers] = useState<AuthUser[]>([
-    {
-      id: "u_1",
-      username: "cyber_ninja",
-      appId: "app_1",
-      hwid: "HWID-8849-XYZ-091",
-      ip: "192.168.1.105",
-      created: new Date(Date.now() - 86400000 * 2).toISOString(),
-      lastLogin: new Date().toISOString(),
-      subscriptions: [
-        {
-          subscription: "VIP Lifetime",
-          expiry: new Date(Date.now() + 86400000 * 360).toISOString(),
-          level: 2
-        }
-      ],
-      banned: false
-    },
-    {
-      id: "u_2",
-      username: "ghost_dev",
-      appId: "app_1",
-      hwid: "HWID-4421-ABC-999",
-      ip: "10.0.0.42",
-      created: new Date(Date.now() - 86400000 * 5).toISOString(),
-      lastLogin: new Date(Date.now() - 3600000 * 12).toISOString(),
-      subscriptions: [
-        {
-          subscription: "Standard",
-          expiry: new Date(Date.now() + 86400000 * 15).toISOString(),
-          level: 1
-        }
-      ],
-      banned: false
-    }
-  ]);
-  const [subscriptions] = useState<SubscriptionPlan[]>([
-    { id: "sub_1", appId: "app_1", name: "VIP Lifetime", level: 2, defaultDays: 365 },
-    { id: "sub_2", appId: "app_1", name: "Standard", level: 1, defaultDays: 30 },
-    { id: "sub_3", appId: "app_2", name: "Vanguard Access", level: 1, defaultDays: 30 }
-  ]);
+  const [firebaseUser, setFirebaseUser] = useState<any>(null);
+  
+  // Fresh start with 0 applications and 0 license keys by default
+  const [applications, setApplications] = useState<Application[]>([]);
+  const [selectedApp, setSelectedApp] = useState<Application | null>(null);
+  const [licenses, setLicenses] = useState<LicenseKey[]>([]);
+  const [users, setUsers] = useState<AuthUser[]>([]);
+  const [subscriptions, setSubscriptions] = useState<SubscriptionPlan[]>([]);
   const [webhooks] = useState<WebhookConfig[]>([
     {
       id: "wh_1",
-      appId: "app_1",
+      appId: "default",
       name: "Discord Bot Alerts",
       url: "https://discord.com/api/webhooks/123456789/redzone_token",
       events: ["register", "login", "key_redeem"],
@@ -131,33 +38,38 @@ export default function App() {
   ]);
   const [logs, setLogs] = useState<AuditLog[]>([
     {
-      id: "log_1",
+      id: "log_init",
       timestamp: new Date().toISOString(),
-      type: "auth",
-      message: "User 'cyber_ninja' successfully authenticated with HWID HWID-8849-XYZ-091",
-      ip: "192.168.1.105",
-      appId: "app_1"
-    },
-    {
-      id: "log_2",
-      timestamp: new Date(Date.now() - 600000).toISOString(),
-      type: "license",
-      message: "Key REDZONE-LIFETIME-992A redeemed by 'cyber_ninja'",
-      ip: "192.168.1.105",
-      appId: "app_1"
+      type: "admin",
+      message: "REDZONE Auth system initialized via Firebase Firestore. 0 applications created.",
+      appId: "system"
     }
   ]);
 
   const [isApiTesterOpen, setIsApiTesterOpen] = useState(false);
 
-  // Fetch initial data from server
+  // Authenticate Firebase anonymously if not signed in
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      if (user) {
+        setFirebaseUser(user);
+      } else {
+        signInAnonymously(auth).catch((err) => console.error("Firebase auth error:", err));
+      }
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // Fetch initial data from server / backend
   useEffect(() => {
     fetch('/api/v1/apps')
       .then(res => res.json())
       .then(data => {
-        if (data.success && data.apps?.length > 0) {
+        if (data.success) {
           setApplications(data.apps);
-          setSelectedApp(data.apps[0]);
+          if (data.apps.length > 0) {
+            setSelectedApp(data.apps[0]);
+          }
         }
       })
       .catch(() => {});
@@ -165,7 +77,7 @@ export default function App() {
     fetch('/api/v1/licenses')
       .then(res => res.json())
       .then(data => {
-        if (data.success && data.licenses) {
+        if (data.success) {
           setLicenses(data.licenses);
         }
       })
@@ -174,7 +86,7 @@ export default function App() {
     fetch('/api/v1/users')
       .then(res => res.json())
       .then(data => {
-        if (data.success && data.users) {
+        if (data.success) {
           setUsers(data.users);
         }
       })
@@ -183,7 +95,7 @@ export default function App() {
     fetch('/api/v1/logs')
       .then(res => res.json())
       .then(data => {
-        if (data.success && data.logs) {
+        if (data.success) {
           setLogs(data.logs);
         }
       })
@@ -201,6 +113,10 @@ export default function App() {
       if (data.success) {
         setApplications(prev => [data.app, ...prev]);
         setSelectedApp(data.app);
+        setSubscriptions(prev => [
+          { id: `sub_${Date.now()}`, appId: data.app.id, name: "Default Access", level: 1, defaultDays: 30 },
+          ...prev
+        ]);
       }
     } catch {
       const newApp: Application = {
@@ -230,6 +146,9 @@ export default function App() {
       const data = await res.json();
       if (data.success && data.keys) {
         setLicenses(prev => [...data.keys, ...prev]);
+        if (selectedApp) {
+          setSelectedApp({ ...selectedApp, activeLicenses: selectedApp.activeLicenses + data.keys.length });
+        }
       }
     } catch {
       const generated: LicenseKey[] = [];

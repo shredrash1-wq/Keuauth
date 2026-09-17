@@ -78,140 +78,19 @@ async function startServer() {
 
   app.use(express.json());
 
-  // Initial Seed Data for REDZONE Auth
-  let applications: Application[] = [
-    {
-      id: "app_1",
-      name: "RedZone Loader v2",
-      secret: "rz_sec_99a8b7c6d5e4f3210",
-      ownerid: "usr_redzone_admin",
-      version: "2.1.0",
-      status: "active",
-      createdAt: new Date(Date.now() - 86400000 * 15).toISOString(),
-      totalUsers: 142,
-      activeLicenses: 89,
-      downloadLink: "https://redzone.auth/downloads/loader-v2.exe"
-    },
-    {
-      id: "app_2",
-      name: "Apex Vanguard Suite",
-      secret: "rz_sec_1122334455667788",
-      ownerid: "usr_redzone_admin",
-      version: "1.0.4",
-      status: "active",
-      createdAt: new Date(Date.now() - 86400000 * 5).toISOString(),
-      totalUsers: 54,
-      activeLicenses: 41,
-      downloadLink: "https://redzone.auth/downloads/vanguard.zip"
-    }
-  ];
-
-  let licenseKeys: LicenseKey[] = [
-    {
-      id: "key_1",
-      key: "REDZONE-LIFETIME-992A-44B1-X89Z",
-      appId: "app_1",
-      durationDays: 365,
-      level: 2,
-      status: "used",
-      usedBy: "cyber_ninja",
-      usedAt: new Date(Date.now() - 86400000 * 2).toISOString(),
-      hwid: "HWID-8849-XYZ-091",
-      createdAt: new Date(Date.now() - 86400000 * 10).toISOString(),
-      note: "VIP Giveaway key"
-    },
-    {
-      id: "key_2",
-      key: "REDZONE-MONTHLY-554C-22D9-K33L",
-      appId: "app_1",
-      durationDays: 30,
-      level: 1,
-      status: "unused",
-      createdAt: new Date(Date.now() - 86400000 * 1).toISOString(),
-      note: "Store purchase #1024"
-    },
-    {
-      id: "key_3",
-      key: "REDZONE-WEEKLY-771B-99E2-P11Q",
-      appId: "app_2",
-      durationDays: 7,
-      level: 1,
-      status: "unused",
-      createdAt: new Date(Date.now()).toISOString(),
-      note: "Trial key batch"
-    }
-  ];
-
-  let authUsers: AuthUser[] = [
-    {
-      id: "u_1",
-      username: "cyber_ninja",
-      appId: "app_1",
-      hwid: "HWID-8849-XYZ-091",
-      ip: "192.168.1.105",
-      created: new Date(Date.now() - 86400000 * 2).toISOString(),
-      lastLogin: new Date().toISOString(),
-      subscriptions: [
-        {
-          subscription: "VIP Lifetime",
-          expiry: new Date(Date.now() + 86400000 * 360).toISOString(),
-          level: 2
-        }
-      ],
-      banned: false
-    },
-    {
-      id: "u_2",
-      username: "ghost_dev",
-      appId: "app_1",
-      hwid: "HWID-4421-ABC-999",
-      ip: "10.0.0.42",
-      created: new Date(Date.now() - 86400000 * 5).toISOString(),
-      lastLogin: new Date(Date.now() - 3600000 * 12).toISOString(),
-      subscriptions: [
-        {
-          subscription: "Standard",
-          expiry: new Date(Date.now() + 86400000 * 15).toISOString(),
-          level: 1
-        }
-      ],
-      banned: false
-    }
-  ];
-
-  let subscriptionPlans: SubscriptionPlan[] = [
-    { id: "sub_1", appId: "app_1", name: "VIP Lifetime", level: 2, defaultDays: 365 },
-    { id: "sub_2", appId: "app_1", name: "Standard", level: 1, defaultDays: 30 },
-    { id: "sub_3", appId: "app_2", name: "Vanguard Access", level: 1, defaultDays: 30 }
-  ];
-
-  let webhooks: WebhookConfig[] = [
-    {
-      id: "wh_1",
-      appId: "app_1",
-      name: "Discord Bot Alerts",
-      url: "https://discord.com/api/webhooks/123456789/redzone_token",
-      events: ["register", "login", "key_redeem"],
-      enabled: true
-    }
-  ];
-
+  // FRESH START: 0 Applications, 0 License Keys, 0 Users initially
+  let applications: Application[] = [];
+  let licenseKeys: LicenseKey[] = [];
+  let authUsers: AuthUser[] = [];
+  let subscriptionPlans: SubscriptionPlan[] = [];
+  let webhooks: WebhookConfig[] = [];
   let auditLogs: AuditLog[] = [
     {
-      id: "log_1",
+      id: "log_init",
       timestamp: new Date().toISOString(),
-      type: "auth",
-      message: "User 'cyber_ninja' successfully authenticated with HWID HWID-8849-XYZ-091",
-      ip: "192.168.1.105",
-      appId: "app_1"
-    },
-    {
-      id: "log_2",
-      timestamp: new Date(Date.now() - 600000).toISOString(),
-      type: "license",
-      message: "Key REDZONE-LIFETIME-992A redeemed by 'cyber_ninja'",
-      ip: "192.168.1.105",
-      appId: "app_1"
+      type: "admin",
+      message: "REDZONE Auth system initialized successfully. Ready for application deployment.",
+      appId: "system"
     }
   ];
 
@@ -226,7 +105,7 @@ async function startServer() {
       id: `app_${Date.now()}`,
       name: name || "New RedZone App",
       secret: `rz_sec_${Math.random().toString(36).substring(2, 15)}${Math.random().toString(36).substring(2, 15)}`,
-      ownerid: "usr_redzone_admin",
+      ownerid: `usr_${Math.random().toString(36).substring(2, 8)}`,
       version: version || "1.0.0",
       status: "active",
       createdAt: new Date().toISOString(),
@@ -235,6 +114,16 @@ async function startServer() {
       downloadLink: downloadLink || "https://redzone.auth/downloads/app.exe"
     };
     applications.push(newApp);
+
+    // Add default subscription plan for the app
+    subscriptionPlans.push({
+      id: `sub_${Date.now()}`,
+      appId: newApp.id,
+      name: "Default Access",
+      level: 1,
+      defaultDays: 30
+    });
+
     auditLogs.unshift({
       id: `log_${Date.now()}`,
       timestamp: new Date().toISOString(),
@@ -272,7 +161,6 @@ async function startServer() {
       generated.push(newKey);
     }
     
-    // Update app license count
     const targetApp = applications.find(a => a.id === appId);
     if (targetApp) {
       targetApp.activeLicenses += generated.length;
@@ -338,12 +226,15 @@ async function startServer() {
 
   // REDZONE Auth Client API Endpoint Simulation (KeyAuth compatible REST interface)
   app.post("/api/v1/client/auth", (req, res) => {
-    const { type, username, password, key, hwid, name, ownerid } = req.body;
+    const { type, key, hwid, name, ownerid } = req.body;
     
-    // Find app by name or default
+    if (applications.length === 0) {
+      return res.status(400).json({ success: false, message: "No applications configured on REDZONE Auth server." });
+    }
+
     const app = applications.find(a => a.name.toLowerCase() === (name || "").toLowerCase()) || applications[0];
     if (!app) {
-      return res.status(400).json({ success: false, message: "Invalid application credentials" });
+      return res.status(400).json({ success: false, message: "Invalid application credentials or app not found." });
     }
 
     const clientIp = req.ip || "127.0.0.1";
@@ -351,7 +242,7 @@ async function startServer() {
     if (type === "license") {
       const foundKey = licenseKeys.find(k => k.key === key && k.appId === app.id);
       if (!foundKey) {
-        return res.json({ success: false, message: "The specified license key does not exist." });
+        return res.json({ success: false, message: "The specified license key does not exist or is invalid." });
       }
       if (foundKey.status === "banned") {
         return res.json({ success: false, message: "This license key has been banned." });
@@ -360,7 +251,6 @@ async function startServer() {
         return res.json({ success: false, message: "Hardware ID (HWID) mismatch. Key is bound to another PC." });
       }
 
-      // Redeem or authorize
       foundKey.status = "used";
       foundKey.hwid = hwid || "HWID-DEFAULT-PC";
       foundKey.usedAt = new Date().toISOString();
@@ -369,7 +259,7 @@ async function startServer() {
       if (!user) {
         user = {
           id: `u_${Date.now()}`,
-          username: `User_${Math.floor(1000 + Math.random() * 9000)}`,
+          username: `ClientUser_${Math.floor(1000 + Math.random() * 9000)}`,
           appId: app.id,
           hwid: hwid || "HWID-DEFAULT-PC",
           ip: clientIp,
