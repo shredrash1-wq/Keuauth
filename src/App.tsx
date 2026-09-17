@@ -11,9 +11,11 @@ import { ApiDocsView } from './components/ApiDocsView';
 import { WebhooksView } from './components/WebhooksView';
 import { SettingsView } from './components/SettingsView';
 import { ApiTesterModal } from './components/ApiTesterModal';
+import { ClientAuthPortal } from './components/ClientAuthPortal';
 
 export default function App() {
   const [currentTab, setCurrentTab] = useState('dashboard');
+  const [mobileOpen, setMobileOpen] = useState(false);
   const [applications, setApplications] = useState<Application[]>([
     {
       id: "app_1",
@@ -201,7 +203,6 @@ export default function App() {
         setSelectedApp(data.app);
       }
     } catch {
-      // Fallback local
       const newApp: Application = {
         id: `app_${Date.now()}`,
         name,
@@ -231,7 +232,6 @@ export default function App() {
         setLicenses(prev => [...data.keys, ...prev]);
       }
     } catch {
-      // Fallback local
       const generated: LicenseKey[] = [];
       for (let i = 0; i < count; i++) {
         const keyStr = `REDZONE-${durationDays}D-${Math.random().toString(36).substring(2, 6).toUpperCase()}-${Math.floor(1000 + Math.random() * 9000)}`;
@@ -277,11 +277,13 @@ export default function App() {
 
   return (
     <div className="flex min-h-screen bg-slate-950 text-slate-100 font-sans selection:bg-red-600 selection:text-white">
-      {/* Sidebar */}
+      {/* Sidebar / Mobile Navigation Drawer */}
       <Sidebar 
         currentTab={currentTab} 
         setCurrentTab={setCurrentTab} 
-        onOpenApiTester={() => setIsApiTesterOpen(true)} 
+        onOpenApiTester={() => setIsApiTesterOpen(true)}
+        mobileOpen={mobileOpen}
+        setMobileOpen={setMobileOpen}
       />
 
       {/* Main Content Area */}
@@ -291,6 +293,7 @@ export default function App() {
           selectedApp={selectedApp} 
           setSelectedApp={setSelectedApp} 
           onNewAppClick={() => setCurrentTab('applications')} 
+          onOpenMobileMenu={() => setMobileOpen(true)}
         />
 
         <main className="flex-1 overflow-y-auto">
@@ -301,6 +304,11 @@ export default function App() {
               users={users} 
               logs={logs} 
               onNavigate={setCurrentTab} 
+            />
+          )}
+          {currentTab === 'client_portal' && (
+            <ClientAuthPortal 
+              applications={applications} 
             />
           )}
           {currentTab === 'applications' && (
