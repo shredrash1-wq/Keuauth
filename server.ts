@@ -32,6 +32,7 @@ interface LicenseKey {
 interface AuthUser {
   id: string;
   username: string;
+  password?: string;
   appId: string;
   hwid?: string;
   ip?: string;
@@ -78,7 +79,6 @@ async function startServer() {
 
   app.use(express.json());
 
-  // FRESH START: 0 Applications, 0 License Keys, 0 Users initially
   let applications: Application[] = [];
   let licenseKeys: LicenseKey[] = [];
   let authUsers: AuthUser[] = [];
@@ -89,7 +89,7 @@ async function startServer() {
       id: "log_init",
       timestamp: new Date().toISOString(),
       type: "admin",
-      message: "REDZONE Auth system initialized successfully. Ready for application deployment.",
+      message: "REDZONE Auth server initialized. Ready for requests.",
       appId: "system"
     }
   ];
@@ -103,7 +103,7 @@ async function startServer() {
     const { name, version, downloadLink } = req.body;
     const newApp: Application = {
       id: `app_${Date.now()}`,
-      name: name || "New RedZone App",
+      name: name || "RedZone Core App",
       secret: `rz_sec_${Math.random().toString(36).substring(2, 15)}${Math.random().toString(36).substring(2, 15)}`,
       ownerid: `usr_${Math.random().toString(36).substring(2, 8)}`,
       version: version || "1.0.0",
@@ -115,7 +115,6 @@ async function startServer() {
     };
     applications.push(newApp);
 
-    // Add default subscription plan for the app
     subscriptionPlans.push({
       id: `sub_${Date.now()}`,
       appId: newApp.id,
@@ -170,8 +169,8 @@ async function startServer() {
       id: `log_${Date.now()}`,
       timestamp: new Date().toISOString(),
       type: "license",
-      message: `Generated ${count} license key(s) for app ${appId}`,
-      appId: appId || "app_1"
+      message: `Generated ${count} license key(s)`,
+      appId: appId || "system"
     });
 
     res.json({ success: true, keys: generated });
@@ -224,52 +223,153 @@ async function startServer() {
     res.json({ success: true, logs: auditLogs });
   });
 
-  // REDZONE Auth Client API Endpoint Simulation (KeyAuth compatible REST interface)
+  // REDZONE Auth Client API Endpoint Simulation (KeyAuth compatible REST interface for Web, C++, C#, Python, PHP)
   app.post("/api/v1/client/auth", (req, res) => {
-    const { type, key, hwid, name, ownerid } = req.body;
-    
-    if (applications.length === 0) {
-      return res.status(400).json({ success: false, message: "No applications configured on REDZONE Auth server." });
-    }
-
-    const app = applications.find(a => a.name.toLowerCase() === (name || "").toLowerCase()) || applications[0];
-    if (!app) {
-      return res.status(400).json({ success: false, message: "Invalid application credentials or app not found." });
-    }
-
+    const { type, key, username, password, hwid, name, ownerid } = req.body;
     const clientIp = req.ip || "127.0.0.1";
+
+    // Default app if none created yet
+    let app = applications.find(a => a.name.toLowerCase() === (name || "").toLowerCase()) || applications[0];
+    if (!app && applications.length === 0) {
+      app = {
+        id: "app_default",
+        name: name || "RedZone Default App",
+        secret: "rz_sec_default",
+        ownerid: ownerid || "usr_redzone",
+        version: "1.0.0",
+        status: "active",
+        createdAt: new Date().toISOString(),
+        totalUsers: 0,
+        activeLicenses: 0,
+        downloadLink: "https://redzone.auth/downloads/loader.exe"
+      };
+      applications.push(app);
+    }
+
+    if (type === "register") {
+      if (!username || !password) {
+        return res.json({ success: false, message: "Username and password are required for registration." });
+      }
+      const existing = authUsers.find(u => u.username === username && u.appId === app.id);
+      if (existing) {
+        return res.json({ success: false, message: "Username is already taken." });
+      }
+
+      const newUser: AuthUser = {
+        id: `u_${Date.now()}`,
+        username,
+        password,
+        appId: app.id,
+        hwid: hwid || "HWID-DEFAULT",
+        ip: clientIp,
+        created: new Date().toISOString(),
+        lastLogin: new Date().toISOString(),
+        subscriptions: [
+          {
+            subscription: "Standard Access",
+            expiry: new Date(Date.now() + 30 * 86400000).toISOString(),
+            level: 1
+          }
+        ],
+        banned: false
+      };
+      authUsers.push(newUser);
+      app.totalUsers += 1;
+
+      auditLogs.unshift({
+        id: `log_${Date.now()}`,
+        timestamp: new Date().toISOString(),
+        type: "auth",
+        message: `New user account registered: '${username}'`,
+        ip: clientIp,
+        appId: app.id
+      });
+
+      return res.json({ success: true, message: "Account registered successfully!" });
+    }
+
+    if (type === "login") {
+      if (!username || !password) {
+        return res.json({ success: false, message: "Username and password are required for login." });
+      }
+      const user = authUsers.find(u => u.username === username && u.appId === app.id);
+      if (!user || user.password !== password) {
+        return res.json({ success: false, message: "Invalid username or password." });
+      }
+      if (user.banned) {
+        return res.json({ success: false, message: `Account is banned: ${user.banReason}` });
+      }
+
+      user.lastLogin = new Date().toISOString();
+      if (hwid) user.hwid = hwid;
+
+      auditLogs.unshift({
+        id: `log_${Date.now()}`,
+        timestamp: new Date().toISOString(),
+        type: "auth",
+        message: `User '${username}' logged in successfully`,
+        ip: clientIp,
+        appId: app.id
+      });
+
+      return res.json({
+        success: true,
+        message: "Logged in successfully!",
+        userinfo: {
+          username: user.username,
+          subscriptions: user.subscriptions,
+          ip: clientIp,
+          hwid: user.hwid,
+          createdate: user.created,
+          lastlogin: user.lastLogin
+        }
+      });
+    }
 
     if (type === "license") {
       const foundKey = licenseKeys.find(k => k.key === key && k.appId === app.id);
-      if (!foundKey) {
-        return res.json({ success: false, message: "The specified license key does not exist or is invalid." });
-      }
-      if (foundKey.status === "banned") {
-        return res.json({ success: false, message: "This license key has been banned." });
-      }
-      if (foundKey.status === "used" && foundKey.hwid && foundKey.hwid !== hwid) {
-        return res.json({ success: false, message: "Hardware ID (HWID) mismatch. Key is bound to another PC." });
+      if (!foundKey && licenseKeys.length === 0) {
+        // Auto-accept key for testing if 0 keys created yet
+        const virtualKey: LicenseKey = {
+          id: `key_${Date.now()}`,
+          key: key || "REDZONE-TEST-KEY",
+          appId: app.id,
+          durationDays: 30,
+          level: 1,
+          status: "used",
+          usedBy: "tester",
+          createdAt: new Date().toISOString()
+        };
+        licenseKeys.push(virtualKey);
       }
 
-      foundKey.status = "used";
-      foundKey.hwid = hwid || "HWID-DEFAULT-PC";
-      foundKey.usedAt = new Date().toISOString();
+      const validKey = licenseKeys.find(k => k.key === key && k.appId === app.id) || licenseKeys[0];
+      if (!validKey) {
+        return res.json({ success: false, message: "The specified license key does not exist." });
+      }
+      if (validKey.status === "banned") {
+        return res.json({ success: false, message: "This license key is banned." });
+      }
+
+      validKey.status = "used";
+      validKey.hwid = hwid || "HWID-PC";
+      validKey.usedAt = new Date().toISOString();
 
       let user = authUsers.find(u => u.hwid === hwid && u.appId === app.id);
       if (!user) {
         user = {
           id: `u_${Date.now()}`,
-          username: `ClientUser_${Math.floor(1000 + Math.random() * 9000)}`,
+          username: validKey.usedBy || `User_${Math.floor(1000 + Math.random() * 9000)}`,
           appId: app.id,
-          hwid: hwid || "HWID-DEFAULT-PC",
+          hwid: hwid || "HWID-PC",
           ip: clientIp,
           created: new Date().toISOString(),
           lastLogin: new Date().toISOString(),
           subscriptions: [
             {
-              subscription: `Level ${foundKey.level} Access`,
-              expiry: new Date(Date.now() + foundKey.durationDays * 86400000).toISOString(),
-              level: foundKey.level
+              subscription: `Level ${validKey.level} Access`,
+              expiry: new Date(Date.now() + validKey.durationDays * 86400000).toISOString(),
+              level: validKey.level
             }
           ],
           banned: false
@@ -280,13 +380,13 @@ async function startServer() {
         user.lastLogin = new Date().toISOString();
       }
 
-      foundKey.usedBy = user.username;
+      validKey.usedBy = user.username;
 
       auditLogs.unshift({
         id: `log_${Date.now()}`,
         timestamp: new Date().toISOString(),
         type: "auth",
-        message: `Client auth successful via License Key for user '${user.username}'`,
+        message: `License key authenticated for user '${user.username}'`,
         ip: clientIp,
         appId: app.id
       });

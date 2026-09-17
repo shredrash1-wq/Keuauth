@@ -227,7 +227,8 @@ export default function App() {
           )}
           {currentTab === 'client_portal' && (
             <ClientAuthPortal 
-              applications={applications} 
+              applications={applications}
+              licenses={licenses}
             />
           )}
           {currentTab === 'applications' && (

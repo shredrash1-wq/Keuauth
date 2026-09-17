@@ -1,22 +1,23 @@
 import React, { useState } from 'react';
 import { Application } from '../types';
-import { Code, Copy, Check, Terminal, ExternalLink } from 'lucide-react';
+import { Code, Copy, Check, Terminal } from 'lucide-react';
 
 interface ApiDocsViewProps {
   selectedApp: Application | null;
 }
 
 export const ApiDocsView: React.FC<ApiDocsViewProps> = ({ selectedApp }) => {
-  const [activeLang, setActiveLang] = useState<'cpp' | 'csharp' | 'python' | 'php'>('csharp');
+  const [activeLang, setActiveLang] = useState<'csharp' | 'cpp' | 'python' | 'php' | 'js'>('csharp');
   const [copied, setCopied] = useState(false);
 
-  const name = selectedApp?.name || "RedZone App";
-  const ownerid = selectedApp?.ownerid || "usr_redzone_admin";
+  const name = selectedApp?.name || "RedZone Core App";
+  const ownerid = selectedApp?.ownerid || "usr_redzone";
   const secret = selectedApp?.secret || "rz_sec_secret";
 
   const snippets = {
-    csharp: `// REDZONE Auth C# Integration Example
+    csharp: `// REDZONE Auth C# Integration Example (KeyAuth Compatible)
 using System;
+using System.Collections.Generic;
 using System.Net.Http;
 using System.Threading.Tasks;
 
@@ -24,7 +25,7 @@ class Program
 {
     static async Task Main(string[] args)
     {
-        Console.Write("Enter your REDZONE License Key: ");
+        Console.Write("Enter License Key: ");
         string key = Console.ReadLine();
 
         HttpClient client = new HttpClient();
@@ -39,9 +40,9 @@ class Program
 
         var content = new FormUrlEncodedContent(values);
         var response = await client.PostAsync("https://ais-dev-ykpcumjethdawivfgp4r6k-320139288899.asia-southeast1.run.app/api/v1/client/auth", content);
-        var responseString = await response.Content.ReadAsStringAsync();
+        var result = await response.Content.ReadAsStringAsync();
 
-        Console.WriteLine(responseString);
+        Console.WriteLine(result);
     }
 }`,
     cpp: `// REDZONE Auth C++ Integration Example (Winsock / CURL)
@@ -101,7 +102,24 @@ $options = array(
 $context  = stream_context_create($options);
 $result = file_get_contents($url, false, $context);
 var_dump($result);
-?>`
+?>`,
+    js: `// REDZONE Auth Web / JavaScript Fetch Example
+async function authenticateRedzone(licenseKey) {
+    const response = await fetch('https://ais-dev-ykpcumjethdawivfgp4r6k-320139288899.asia-southeast1.run.app/api/v1/client/auth', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            type: 'license',
+            key: licenseKey,
+            name: '${name}',
+            ownerid: '${ownerid}',
+            hwid: navigator.userAgent
+        })
+    });
+    const data = await response.json();
+    console.log(data);
+    return data;
+}`
   };
 
   const copyCode = () => {
@@ -111,26 +129,26 @@ var_dump($result);
   };
 
   return (
-    <div className="p-8 space-y-8 max-w-7xl mx-auto">
+    <div className="p-4 sm:p-8 space-y-8 max-w-7xl mx-auto">
       <div>
         <h1 className="text-3xl font-extrabold text-white tracking-tight">API & Code Snippets</h1>
-        <p className="text-slate-400 text-sm mt-1">Ready-to-use integration wrappers and REST API endpoints for C++, C#, Python, and PHP.</p>
+        <p className="text-slate-400 text-sm mt-1">Ready-to-use integration wrappers for Web, C++, C#, Python, and PHP.</p>
       </div>
 
       <div className="bg-slate-900 border border-red-950/60 rounded-2xl overflow-hidden shadow-xl">
-        <div className="flex items-center justify-between px-6 py-4 bg-slate-950 border-b border-red-950/40">
-          <div className="flex items-center gap-2">
-            {(['csharp', 'cpp', 'python', 'php'] as const).map((lang) => (
+        <div className="flex flex-wrap items-center justify-between gap-2 px-4 sm:px-6 py-4 bg-slate-950 border-b border-red-950/40">
+          <div className="flex items-center gap-2 overflow-x-auto pb-2 sm:pb-0">
+            {(['csharp', 'cpp', 'python', 'php', 'js'] as const).map((lang) => (
               <button
                 key={lang}
                 onClick={() => setActiveLang(lang)}
-                className={`px-4 py-2 rounded-xl text-xs font-mono uppercase tracking-wider transition-all ${
+                className={`px-4 py-2 rounded-xl text-xs font-mono uppercase tracking-wider transition-all whitespace-nowrap ${
                   activeLang === lang
                     ? 'bg-red-600 text-white font-bold shadow-md shadow-red-950'
                     : 'text-slate-400 hover:text-slate-200 bg-slate-900'
                 }`}
               >
-                {lang === 'csharp' ? 'C#' : lang === 'cpp' ? 'C++' : lang}
+                {lang === 'csharp' ? 'C#' : lang === 'cpp' ? 'C++' : lang === 'js' ? 'Web (JS)' : lang}
               </button>
             ))}
           </div>
@@ -144,7 +162,7 @@ var_dump($result);
           </button>
         </div>
 
-        <div className="p-6 bg-slate-950 overflow-x-auto">
+        <div className="p-4 sm:p-6 bg-slate-950 overflow-x-auto">
           <pre className="font-mono text-xs text-slate-300 leading-relaxed">
             <code>{snippets[activeLang]}</code>
           </pre>
