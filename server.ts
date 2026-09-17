@@ -1,6 +1,25 @@
 import express from "express";
 import path from "path";
 import { createServer as createViteServer } from "vite";
+import { initializeApp, getApps } from "firebase/app";
+import { getFirestore, collection, getDocs, doc, setDoc, deleteDoc, updateDoc, getDoc } from "firebase/firestore";
+
+const firebaseConfig = {
+  apiKey: process.env.VITE_FIREBASE_API_KEY || "AIzaSyDummyKeyForPreviewMode12345",
+  authDomain: process.env.VITE_FIREBASE_AUTH_DOMAIN || "gen-lang-client-0980948955.firebaseapp.com",
+  projectId: process.env.VITE_FIREBASE_PROJECT_ID || "gen-lang-client-0980948955",
+  storageBucket: process.env.VITE_FIREBASE_STORAGE_BUCKET || "gen-lang-client-0980948955.appspot.com",
+  messagingSenderId: process.env.VITE_FIREBASE_MESSAGING_SENDER_ID || "1234567890",
+  appId: process.env.VITE_FIREBASE_APP_ID || "1:1234567890:web:abcdef"
+};
+
+let db: any = null;
+try {
+  const firebaseApp = !getApps().length ? initializeApp(firebaseConfig) : getApps()[0];
+  db = getFirestore(firebaseApp);
+} catch (e) {
+  console.log("Firebase init fallback to memory mode:", e);
+}
 
 interface Application {
   id: string;
@@ -44,30 +63,10 @@ interface AuthUser {
   banReason?: string;
 }
 
-interface SubscriptionPlan {
+interface Developer {
   id: string;
-  appId: string;
-  name: string;
-  level: number;
-  defaultDays: number;
-}
-
-interface WebhookConfig {
-  id: string;
-  appId: string;
-  name: string;
-  url: string;
-  events: string[];
-  enabled: boolean;
-}
-
-interface AuditLog {
-  id: string;
-  timestamp: string;
-  type: 'auth' | 'license' | 'admin' | 'webhook';
-  message: string;
-  ip?: string;
-  appId: string;
+  username: string;
+  password: string;
 }
 
 async function startServer() {
@@ -87,38 +86,64 @@ async function startServer() {
     next();
   });
 
-  // Fresh Start: 0 applications initially until developer logs in and creates one
+  // In-memory fallback stores synchronized with Firestore if available
   let applications: Application[] = [];
   let licenseKeys: LicenseKey[] = [];
   let authUsers: AuthUser[] = [];
-  let subscriptionPlans: SubscriptionPlan[] = [];
-  let webhooks: WebhookConfig[] = [];
-  let auditLogs: AuditLog[] = [
+  let developers: Developer[] = [
+    { id: "dev_admin", username: "admin", password: "password123" }
+  ];
+  let auditLogs: any[] = [
     {
       id: "log_init",
       timestamp: new Date().toISOString(),
       type: "admin",
-      message: "REDZONE Auth server initialized. Please register or login as developer to create applications.",
+      message: "REDZONE Auth server initialized with Firebase persistence.",
       appId: "system"
     }
   ];
 
-  // Developer Admin Accounts (for panel login)
-  let developers: { username: string; password: string }[] = [
-    { username: "admin", password: "password123" }
-  ];
+  // Load initial state from Firestore
+  async function loadFromFirestore() {
+    if (!db) return;
+    try {
+      const appsSnap = await getDocs(collection(db, "applications"));
+      if (!appsSnap.empty) {
+        applications = appsSnap.docs.map(d => ({ id: d.id, ...d.data() } as Application));
+      }
+      const keysSnap = await getDocs(collection(db, "licenses"));
+      if (!keysSnap.empty) {
+        licenseKeys = keysSnap.docs.map(d => ({ id: d.id, ...d.data() } as LicenseKey));
+      }
+      const usersSnap = await getDocs(collection(db, "users"));
+      if (!usersSnap.empty) {
+        authUsers = usersSnap.docs.map(d => ({ id: d.id, ...d.data() } as AuthUser));
+      }
+      const devsSnap = await getDocs(collection(db, "developers"));
+      if (!devsSnap.empty) {
+        developers = devsSnap.docs.map(d => ({ id: d.id, ...d.data() } as Developer));
+      }
+    } catch (e) {
+      console.error("Error loading from Firestore:", e);
+    }
+  }
+
+  await loadFromFirestore();
 
   // Developer Auth Endpoints
-  app.post("/api/v1/dev/login", (req, res) => {
+  app.post("/api/v1/dev/login", async (req, res) => {
     const { username, password } = req.body;
+    if (db) {
+      await loadFromFirestore();
+    }
     const dev = developers.find(d => d.username === username && d.password === password);
     if (!dev) {
       return res.json({ success: false, message: "Invalid developer username or password." });
     }
-    res.json({ success: true, message: "Developer login successful!" });
+    res.json({ success: true, message: "Developer login successful!", developer: { username: dev.username } });
   });
 
-  app.post("/api/v1/dev/register", (req, res) => {
+  app.post("/api/v1/dev/register", async (req, res) => {
     const { username, password } = req.body;
     if (!username || !password) {
       return res.json({ success: false, message: "Username and password required." });
@@ -126,20 +151,39 @@ async function startServer() {
     if (developers.some(d => d.username === username)) {
       return res.json({ success: false, message: "Developer username already exists." });
     }
-    developers.push({ username, password });
-    res.json({ success: true, message: "Developer registered successfully!" });
+    const newDev: Developer = {
+      id: `dev_${Date.now()}`,
+      username,
+      password
+    };
+    developers.push(newDev);
+
+    if (db) {
+      try {
+        await setDoc(doc(db, "developers", newDev.id), newDev);
+      } catch (e) {
+        console.error("Firestore save developer error:", e);
+      }
+    }
+
+    res.json({ success: true, message: "Developer registered successfully! You can now sign in." });
   });
 
-  // API Routes
-  app.get("/api/v1/apps", (req, res) => {
+  // Applications Endpoints
+  app.get("/api/v1/apps", async (req, res) => {
+    if (db) await loadFromFirestore();
     res.json({ success: true, apps: applications });
   });
 
-  app.post("/api/v1/apps", (req, res) => {
+  app.post("/api/v1/apps", async (req, res) => {
     const { name, version, downloadLink } = req.body;
+    if (!name) {
+      return res.json({ success: false, message: "Application name is required." });
+    }
+
     const newApp: Application = {
       id: `app_${Date.now()}`,
-      name: name || "RedZone Core App",
+      name: name.trim(),
       secret: `rz_sec_${Math.random().toString(36).substring(2, 15)}${Math.random().toString(36).substring(2, 15)}`,
       ownerid: `usr_${Math.random().toString(36).substring(2, 8)}`,
       version: version || "1.0.0",
@@ -149,15 +193,16 @@ async function startServer() {
       activeLicenses: 0,
       downloadLink: downloadLink || "https://redzone.auth/downloads/app.exe"
     };
+
     applications.push(newApp);
 
-    subscriptionPlans.push({
-      id: `sub_${Date.now()}`,
-      appId: newApp.id,
-      name: "Default Access",
-      level: 1,
-      defaultDays: 30
-    });
+    if (db) {
+      try {
+        await setDoc(doc(db, "applications", newApp.id), newApp);
+      } catch (e) {
+        console.error("Firestore save app error:", e);
+      }
+    }
 
     auditLogs.unshift({
       id: `log_${Date.now()}`,
@@ -166,21 +211,24 @@ async function startServer() {
       message: `Created application '${newApp.name}'`,
       appId: newApp.id
     });
+
     res.json({ success: true, app: newApp });
   });
 
-  app.get("/api/v1/licenses", (req, res) => {
+  // Licenses Endpoints
+  app.get("/api/v1/licenses", async (req, res) => {
+    if (db) await loadFromFirestore();
     const { appId } = req.query;
     const filtered = appId ? licenseKeys.filter(k => k.appId === appId) : licenseKeys;
     res.json({ success: true, licenses: filtered });
   });
 
-  app.post("/api/v1/licenses/generate", (req, res) => {
+  app.post("/api/v1/licenses/generate", async (req, res) => {
     const { appId, count = 1, durationDays = 30, level = 1, note } = req.body;
     const generated: LicenseKey[] = [];
     const targetAppId = appId || applications[0]?.id || "app_default";
 
-    for (let i = 0; i < count; i++) {
+    for (let i = 0; i < Number(count); i++) {
       const randomPart = Math.random().toString(36).substring(2, 6).toUpperCase();
       const randomPart2 = Math.random().toString(36).substring(2, 6).toUpperCase();
       const keyStr = `REDZONE-${durationDays}D-${randomPart}-${randomPart2}-${Math.floor(1000 + Math.random() * 9000)}`;
@@ -196,28 +244,32 @@ async function startServer() {
       };
       licenseKeys.unshift(newKey);
       generated.push(newKey);
+
+      if (db) {
+        try {
+          await setDoc(doc(db, "licenses", newKey.id), newKey);
+        } catch (e) {
+          console.error("Firestore save key error:", e);
+        }
+      }
     }
-    
+
     const targetApp = applications.find(a => a.id === targetAppId);
     if (targetApp) {
       targetApp.activeLicenses += generated.length;
+      if (db) {
+        try {
+          await updateDoc(doc(db, "applications", targetApp.id), { activeLicenses: targetApp.activeLicenses });
+        } catch {}
+      }
     }
-
-    auditLogs.unshift({
-      id: `log_${Date.now()}`,
-      timestamp: new Date().toISOString(),
-      type: "license",
-      message: `Generated ${count} license key(s)`,
-      appId: targetAppId
-    });
 
     res.json({ success: true, keys: generated });
   });
 
-  // Advanced License Key actions: delete, lock, unlock, ban, freeze
-  app.post("/api/v1/licenses/:id/action", (req, res) => {
+  app.post("/api/v1/licenses/:id/action", async (req, res) => {
     const { id } = req.params;
-    const { action } = req.body; // 'delete' | 'lock' | 'unlock' | 'ban' | 'freeze' | 'unfreeze'
+    const { action } = req.body;
     const key = licenseKeys.find(k => k.id === id);
 
     if (!key) {
@@ -226,37 +278,33 @@ async function startServer() {
 
     if (action === 'delete') {
       licenseKeys = licenseKeys.filter(k => k.id !== id);
-    } else if (action === 'lock') {
-      key.hwid = "LOCKED_HWID_MANUAL";
-    } else if (action === 'unlock') {
-      key.hwid = undefined;
-      key.status = 'unused';
-      key.usedBy = undefined;
-    } else if (action === 'ban') {
-      key.status = 'banned';
-    } else if (action === 'freeze') {
-      key.status = 'frozen';
-    } else if (action === 'unfreeze') {
-      key.status = key.hwid ? 'used' : 'unused';
+      if (db) {
+        try { await deleteDoc(doc(db, "licenses", id)); } catch {}
+      }
+    } else {
+      if (action === 'lock') key.hwid = "LOCKED_HWID_MANUAL";
+      else if (action === 'unlock') { key.hwid = undefined; key.status = 'unused'; key.usedBy = undefined; }
+      else if (action === 'ban') key.status = 'banned';
+      else if (action === 'freeze') key.status = 'frozen';
+      else if (action === 'unfreeze') key.status = key.hwid ? 'used' : 'unused';
+
+      if (db) {
+        try { await updateDoc(doc(db, "licenses", id), { ...key }); } catch {}
+      }
     }
 
     res.json({ success: true, key });
   });
 
-  app.delete("/api/v1/licenses/:id", (req, res) => {
-    const { id } = req.params;
-    licenseKeys = licenseKeys.filter(k => k.id !== id);
-    res.json({ success: true });
-  });
-
-  // User / Pass Creator Endpoints
-  app.get("/api/v1/users", (req, res) => {
+  // Users Endpoints
+  app.get("/api/v1/users", async (req, res) => {
+    if (db) await loadFromFirestore();
     const { appId } = req.query;
     const filtered = appId ? authUsers.filter(u => u.appId === appId) : authUsers;
     res.json({ success: true, users: filtered });
   });
 
-  app.post("/api/v1/users/create", (req, res) => {
+  app.post("/api/v1/users/create", async (req, res) => {
     const { appId, username, password, durationDays = 30, level = 1 } = req.body;
     if (!username || !password) {
       return res.json({ success: false, message: "Username and password required." });
@@ -279,23 +327,20 @@ async function startServer() {
     };
 
     authUsers.unshift(newUser);
-    const app = applications.find(a => a.id === targetAppId);
-    if (app) app.totalUsers += 1;
-
-    auditLogs.unshift({
-      id: `log_${Date.now()}`,
-      timestamp: new Date().toISOString(),
-      type: "admin",
-      message: `Created user account '${username}' with ${durationDays} days access`,
-      appId: targetAppId
-    });
+    if (db) {
+      try {
+        await setDoc(doc(db, "users", newUser.id), newUser);
+      } catch (e) {
+        console.error("Firestore save user error:", e);
+      }
+    }
 
     res.json({ success: true, user: newUser });
   });
 
-  app.post("/api/v1/users/:id/action", (req, res) => {
+  app.post("/api/v1/users/:id/action", async (req, res) => {
     const { id } = req.params;
-    const { action, reason } = req.body; // 'delete' | 'ban' | 'unban' | 'reset_hwid'
+    const { action, reason } = req.body;
     const user = authUsers.find(u => u.id === id);
 
     if (!user) {
@@ -304,38 +349,26 @@ async function startServer() {
 
     if (action === 'delete') {
       authUsers = authUsers.filter(u => u.id !== id);
-    } else if (action === 'ban') {
-      user.banned = true;
-      user.banReason = reason || "Banned by developer";
-    } else if (action === 'unban') {
-      user.banned = false;
-      user.banReason = undefined;
-    } else if (action === 'reset_hwid') {
-      user.hwid = undefined;
+      if (db) {
+        try { await deleteDoc(doc(db, "users", id)); } catch {}
+      }
+    } else {
+      if (action === 'ban') { user.banned = true; user.banReason = reason || "Banned"; }
+      else if (action === 'unban') { user.banned = false; user.banReason = undefined; }
+      else if (action === 'reset_hwid') { user.hwid = undefined; }
+
+      if (db) {
+        try { await updateDoc(doc(db, "users", id), { ...user }); } catch {}
+      }
     }
 
     res.json({ success: true, user });
   });
 
-  app.get("/api/v1/subscriptions", (req, res) => {
-    const { appId } = req.query;
-    const filtered = appId ? subscriptionPlans.filter(s => s.appId === appId) : subscriptionPlans;
-    res.json({ success: true, subscriptions: filtered });
-  });
-
-  app.get("/api/v1/webhooks", (req, res) => {
-    const { appId } = req.query;
-    const filtered = appId ? webhooks.filter(w => w.appId === appId) : webhooks;
-    res.json({ success: true, webhooks: filtered });
-  });
-
-  app.get("/api/v1/logs", (req, res) => {
-    res.json({ success: true, logs: auditLogs });
-  });
-
-  // REDZONE Auth Client API Endpoint (KeyAuth compatible: supports license keys & user/pass, no HWID mandatory)
-  app.post("/api/v1/client/auth", (req, res) => {
-    const { type, key, username, password, hwid, name, ownerid } = req.body;
+  // Client Auth API Endpoint (KeyAuth compatible REST interface)
+  app.post("/api/v1/client/auth", async (req, res) => {
+    if (db) await loadFromFirestore();
+    const { type, key, username, password, hwid, name } = req.body;
     const clientIp = req.ip || "127.0.0.1";
 
     let app = applications.find(a => a.name.toLowerCase() === (name || "").toLowerCase());
@@ -350,7 +383,6 @@ async function startServer() {
       return res.json({ success: false, message: "Application not found or invalid app name." });
     }
 
-    // 1. User & Pass Login / Validation
     if (type === 'login' || type === 'user') {
       if (!username || !password) {
         return res.json({ success: false, message: "Username and password required." });
@@ -386,7 +418,7 @@ async function startServer() {
       });
     }
 
-    // 2. License Key Validation (Matches user JS snippet: type: 'license', key, name, ownerid)
+    // License key auth
     const foundKey = licenseKeys.find(k => k.key === key && k.appId === app.id);
     if (!foundKey) {
       return res.json({ success: false, message: "Invalid license key or key not found." });
@@ -399,13 +431,16 @@ async function startServer() {
     }
 
     foundKey.status = 'used';
-    if (hwid) {
-      foundKey.hwid = hwid;
-    } else if (!foundKey.hwid) {
-      foundKey.hwid = "BROWSER_CLIENT";
-    }
+    if (hwid) foundKey.hwid = hwid;
+    else if (!foundKey.hwid) foundKey.hwid = "BROWSER_CLIENT";
     foundKey.usedAt = new Date().toISOString();
     foundKey.usedBy = foundKey.usedBy || "ClientUser";
+
+    if (db) {
+      try {
+        await updateDoc(doc(db, "licenses", foundKey.id), { ...foundKey });
+      } catch {}
+    }
 
     return res.json({
       success: true,

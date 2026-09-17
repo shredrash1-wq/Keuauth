@@ -39,13 +39,25 @@
       "type": "object",
       "properties": {
         "username": { "type": "string" },
+        "password": { "type": "string" },
         "appId": { "type": "string" },
+        "durationDays": { "type": "number" },
+        "level": { "type": "number" },
         "hwid": { "type": "string" },
         "ip": { "type": "string" },
         "created": { "type": "string" },
         "lastLogin": { "type": "string" },
         "banned": { "type": "boolean" },
         "banReason": { "type": "string" }
+      }
+    },
+    "Developer": {
+      "title": "Developer",
+      "description": "Developer admin account",
+      "type": "object",
+      "properties": {
+        "username": { "type": "string" },
+        "password": { "type": "string" }
       }
     }
   },
@@ -61,6 +73,10 @@
     "/users/{userId}": {
       "schema": { "$ref": "#/entities/AuthUser" },
       "description": "Users collection"
+    },
+    "/developers/{devId}": {
+      "schema": { "$ref": "#/entities/Developer" },
+      "description": "Developers collection"
     }
   },
   "securityRules": "rules_version = '2';\nservice cloud.firestore {\n  match /databases/{database}/documents {\n    match /{document=**} {\n      allow read, write: if true;\n    }\n  }\n}"
