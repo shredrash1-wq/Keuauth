@@ -149,7 +149,7 @@ export default function App() {
     }
   };
 
-  const handleAddApp = async (name: string, version: string, downloadLink: string) => {
+  const handleAddApp = async (name: string, version: string, downloadLink: string): Promise<boolean> => {
     try {
       const res = await fetch('/api/v1/apps', {
         method: 'POST',
@@ -161,8 +161,13 @@ export default function App() {
         setApplications(prev => [data.app, ...prev]);
         setSelectedApp(data.app);
         fetchData();
+        return true;
+      } else {
+        throw new Error(data.message || 'Failed to create application');
       }
-    } catch {}
+    } catch (err: any) {
+      throw err;
+    }
   };
 
   const handleGenerateKeys = async (appId: string, count: number, durationDays: number, level: number, note: string) => {
