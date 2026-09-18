@@ -81,11 +81,14 @@ async function startServer() {
     const origin = req.headers.origin;
     const allowedOrigins = [
       'https://redzone-auth.vercel.app',
+      'http://redzone-auth.vercel.app',
+      'https://www.redzone-auth.vercel.app',
+      'http://www.redzone-auth.vercel.app',
       'http://localhost:3000',
       'http://127.0.0.1:3000'
     ];
 
-    if (origin && (allowedOrigins.includes(origin) || origin.endsWith('.vercel.app') || origin.endsWith('.run.app'))) {
+    if (origin && (allowedOrigins.includes(origin) || origin.includes('redzone-auth.vercel.app') || origin.endsWith('.vercel.app') || origin.endsWith('.run.app'))) {
       res.setHeader('Access-Control-Allow-Origin', origin);
     } else {
       res.setHeader('Access-Control-Allow-Origin', '*');

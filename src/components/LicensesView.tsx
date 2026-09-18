@@ -38,18 +38,22 @@ export const LicensesView: React.FC<LicensesViewProps> = ({ licenses, applicatio
     e.preventDefault();
     setStatusFeedback(null);
     const effectiveAppId = targetAppId || selectedApp?.id || applications[0]?.id || 'app_default';
+    const safeCount = Math.max(1, Math.min(100, Math.floor(Number(count) || 1)));
+    const safeDays = Math.max(1, Math.floor(Number(durationDays) || 30));
+    const safeLevel = Math.max(1, Math.floor(Number(level) || 1));
 
     setGenerating(true);
     try {
-      await onGenerateKeys(effectiveAppId, count, durationDays, level, note);
+      await onGenerateKeys(effectiveAppId, safeCount, safeDays, safeLevel, (note || '').trim());
       const appName = applications.find(a => a.id === effectiveAppId)?.name || 'Default App';
       setStatusFeedback({
         type: 'success',
-        message: `Generated ${count} license key(s) successfully for ${appName}!`
+        message: `Generated ${safeCount} license key(s) successfully for ${appName}!`
       });
       setNote('');
       setTimeout(() => setStatusFeedback(null), 5000);
     } catch (err: any) {
+      console.error("License generation error:", err);
       setStatusFeedback({
         type: 'error',
         message: err.message || 'Failed to generate license keys.'
@@ -61,14 +65,19 @@ export const LicensesView: React.FC<LicensesViewProps> = ({ licenses, applicatio
 
   const handleKeyAction = async (id: string, action: string) => {
     try {
-      await fetch(`/api/v1/licenses/${id}/action`, {
+      const res = await fetch(`/api/v1/licenses/${id}/action`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action })
       });
-      onRefresh();
+      if (res.ok) {
+        onRefresh();
+      } else {
+        onRefresh();
+      }
     } catch (err) {
       console.warn('Failed license action:', err);
+      onRefresh();
     }
   };
 
@@ -119,7 +128,7 @@ export const LicensesView: React.FC<LicensesViewProps> = ({ licenses, applicatio
           <KeyRound className="w-5 h-5 text-red-500" />
           <span>Quick License Generator</span>
         </h3>
-        <form onSubmit={handleGenerate} className="space-y-4">
+        <form onSubmit={handleGenerate} noValidate className="space-y-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {/* Target Application Selector */}
             <div>
@@ -151,8 +160,12 @@ export const LicensesView: React.FC<LicensesViewProps> = ({ licenses, applicatio
                 type="number"
                 min={1}
                 max={100}
+                step={1}
                 value={count}
-                onChange={(e) => setCount(Number(e.target.value))}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setCount(val === '' ? ('' as any) : Number(val));
+                }}
                 className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-red-500/50"
               />
             </div>
@@ -163,8 +176,12 @@ export const LicensesView: React.FC<LicensesViewProps> = ({ licenses, applicatio
               <input
                 type="number"
                 min={1}
+                step={1}
                 value={durationDays}
-                onChange={(e) => setDurationDays(Number(e.target.value))}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setDurationDays(val === '' ? ('' as any) : Number(val));
+                }}
                 className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-red-500/50"
               />
             </div>

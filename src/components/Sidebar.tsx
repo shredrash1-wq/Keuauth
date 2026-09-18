@@ -23,7 +23,7 @@ interface SidebarProps {
   onLogout: () => void;
   onLogoutAll?: () => void;
   userEmail?: string;
-  onOpenProfile?: (tab?: 'profile' | 'sessions' | 'database' | 'logs') => void;
+  onOpenProfile?: (tab?: 'profile' | 'sessions') => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({ 

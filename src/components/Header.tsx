@@ -22,7 +22,7 @@ interface HeaderProps {
   userEmail?: string;
   userPhoto?: string;
   userDisplayName?: string;
-  onOpenProfile?: (tab?: 'profile' | 'sessions' | 'database' | 'logs') => void;
+  onOpenProfile?: (tab?: 'profile' | 'sessions') => void;
   onLogout?: () => void;
   onLogoutAll?: () => void;
 }
@@ -106,9 +106,9 @@ export const Header: React.FC<HeaderProps> = ({
 
         <div className="flex items-center gap-3 relative" ref={menuRef}>
           <button 
-            onClick={() => onOpenProfile && onOpenProfile('logs')}
+            onClick={() => onOpenProfile && onOpenProfile('profile')}
             className="relative p-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-red-950/60 text-slate-300 transition-colors cursor-pointer" 
-            title="System Notifications & Logs"
+            title="Profile & Settings"
           >
             <Bell className="w-4 h-4" />
             <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-red-500" />
@@ -171,17 +171,6 @@ export const Header: React.FC<HeaderProps> = ({
                 >
                   <Laptop className="w-4 h-4 text-blue-400" />
                   <span>Active Sessions & Security</span>
-                </button>
-
-                <button
-                  onClick={() => {
-                    setMenuOpen(false);
-                    onOpenProfile && onOpenProfile('database');
-                  }}
-                  className="w-full px-4 py-2 text-left text-xs text-slate-300 hover:text-white hover:bg-slate-800/80 flex items-center gap-2.5 transition-colors cursor-pointer"
-                >
-                  <SettingsIcon className="w-4 h-4 text-slate-400" />
-                  <span>System Preferences</span>
                 </button>
               </div>
 

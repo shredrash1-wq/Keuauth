@@ -4,11 +4,9 @@ import {
   User as UserIcon, 
   ShieldAlert, 
   Key, 
-  Database, 
   LogOut, 
   Laptop, 
   Smartphone, 
-  Globe, 
   CheckCircle2, 
   AlertTriangle, 
   Copy, 
@@ -17,10 +15,7 @@ import {
   Mail,
   Calendar,
   Lock,
-  History,
-  ShieldCheck,
-  Search,
-  ExternalLink
+  ShieldCheck
 } from 'lucide-react';
 
 interface SettingsViewProps {
@@ -34,7 +29,7 @@ interface SettingsViewProps {
   onUpdateProfile?: (displayName: string) => Promise<boolean>;
   onLogout: () => void;
   onLogoutAll: () => Promise<void>;
-  initialTab?: 'profile' | 'sessions' | 'database' | 'logs';
+  initialTab?: 'profile' | 'sessions';
 }
 
 export const SettingsView: React.FC<SettingsViewProps> = ({
@@ -50,7 +45,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   onLogoutAll,
   initialTab = 'profile'
 }) => {
-  const [activeTab, setActiveTab] = useState<'profile' | 'sessions' | 'database' | 'logs'>(initialTab);
+  const [activeTab, setActiveTab] = useState<'profile' | 'sessions'>(initialTab);
   const [displayName, setDisplayName] = useState(userDisplayName);
   const [isUpdating, setIsUpdating] = useState(false);
   const [updateSuccess, setUpdateSuccess] = useState(false);
@@ -59,9 +54,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [copiedKey, setCopiedKey] = useState(false);
   const [showLogoutAllModal, setShowLogoutAllModal] = useState(false);
   const [logoutAllLoading, setLogoutAllLoading] = useState(false);
-
-  const [logFilter, setLogFilter] = useState<'all' | 'auth' | 'license' | 'admin'>('all');
-  const [searchLog, setSearchLog] = useState('');
 
   // Generated developer API key
   const [apiKey, setApiKey] = useState(() => {
@@ -142,14 +134,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     ? 'Microsoft Edge'
     : 'Web Browser';
 
-  const filteredLogs = logs.filter(log => {
-    const matchesType = logFilter === 'all' || log.type === logFilter;
-    const matchesSearch = !searchLog || 
-      log.message.toLowerCase().includes(searchLog.toLowerCase()) ||
-      (log.ip && log.ip.includes(searchLog));
-    return matchesType && matchesSearch;
-  });
-
   return (
     <div className="p-4 sm:p-8 space-y-6 sm:space-y-8 max-w-7xl mx-auto">
       {/* Header */}
@@ -206,30 +190,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         >
           <Laptop className="w-4 h-4" />
           <span>Sessions & Logout All</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('database')}
-          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 shrink-0 ${
-            activeTab === 'database'
-              ? 'bg-red-600 text-white shadow-md shadow-red-950'
-              : 'text-slate-400 hover:text-white hover:bg-slate-900'
-          }`}
-        >
-          <Database className="w-4 h-4" />
-          <span>Database & Storage</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('logs')}
-          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 shrink-0 ${
-            activeTab === 'logs'
-              ? 'bg-red-600 text-white shadow-md shadow-red-950'
-              : 'text-slate-400 hover:text-white hover:bg-slate-900'
-          }`}
-        >
-          <History className="w-4 h-4" />
-          <span>Complete Audit Logs</span>
         </button>
       </div>
 
@@ -502,163 +462,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 </div>
               </div>
             </div>
-          </div>
-        </div>
-      )}
-
-      {/* Database & Storage Tab */}
-      {activeTab === 'database' && (
-        <div className="space-y-6">
-          <div className="bg-slate-900 border border-red-950/60 rounded-2xl p-6 shadow-xl space-y-6">
-            <h3 className="text-lg font-bold text-white flex items-center gap-2">
-              <Database className="w-5 h-5 text-red-500" />
-              <span>REDZONE Cloud Database & Firestore Synchronization</span>
-            </h3>
-            <p className="text-slate-400 text-xs leading-relaxed">
-              Your applications, licenses, registered users, and audit logs are synchronized across Google Cloud Firestore and backed by live server validation.
-            </p>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <div className="p-4 rounded-xl bg-slate-950 border border-slate-800">
-                <p className="text-xs text-slate-500">Database Engine</p>
-                <p className="text-sm font-bold text-white font-mono mt-1">Google Cloud Firestore</p>
-                <p className="text-[11px] text-emerald-400 mt-1">● Online & Synchronized</p>
-              </div>
-
-              <div className="p-4 rounded-xl bg-slate-950 border border-slate-800">
-                <p className="text-xs text-slate-500">Target Database ID</p>
-                <p className="text-xs font-bold text-white font-mono mt-1 truncate" title="ai-studio-redzoneauth-73185f29-19fd-4277-a3cf-f8fbd09dcb33">
-                  ai-studio-redzoneauth-...
-                </p>
-                <p className="text-[11px] text-slate-400 mt-1">Dedicated Project Store</p>
-              </div>
-
-              <div className="p-4 rounded-xl bg-slate-950 border border-slate-800">
-                <p className="text-xs text-slate-500">Security Mode</p>
-                <p className="text-sm font-bold text-white font-mono mt-1">Server Proxy & Token Rules</p>
-                <p className="text-[11px] text-emerald-400 mt-1">AES-256 Encrypted</p>
-              </div>
-            </div>
-          </div>
-
-          {/* Authorized Domains Section */}
-          <div className="bg-slate-900 border border-red-950/60 rounded-2xl p-6 shadow-xl space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="text-base font-bold text-white flex items-center gap-2">
-                <Globe className="w-5 h-5 text-emerald-400" />
-                <span>Authorized Production Domains & CORS Origins</span>
-              </h3>
-              <span className="px-2.5 py-1 rounded-full bg-emerald-950/60 border border-emerald-500/30 text-emerald-400 text-xs font-semibold flex items-center gap-1.5">
-                <CheckCircle2 className="w-3.5 h-3.5" />
-                <span>Domain Authorized</span>
-              </span>
-            </div>
-
-            <p className="text-slate-400 text-xs">
-              The following domains are explicitly whitelisted and authorized for client authentication, cross-origin resource sharing (CORS), and API communication:
-            </p>
-
-            <div className="space-y-2">
-              <div className="p-3.5 rounded-xl bg-slate-950 border border-emerald-500/30 flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-lg bg-emerald-950/50 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
-                    <Globe className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <p className="text-xs font-mono font-bold text-white">https://redzone-auth.vercel.app/</p>
-                    <p className="text-[11px] text-slate-500">Primary Vercel Production Deployment • CORS Enabled</p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <a
-                    href="https://redzone-auth.vercel.app/"
-                    target="_blank"
-                    rel="noreferrer"
-                    className="p-1.5 hover:bg-slate-800 text-slate-400 hover:text-white rounded-lg transition-colors inline-flex items-center gap-1 text-xs"
-                    title="Open Domain"
-                  >
-                    <ExternalLink className="w-3.5 h-3.5" />
-                  </a>
-                </div>
-              </div>
-
-              <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-between opacity-80">
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-lg bg-slate-900 border border-slate-700 flex items-center justify-center text-slate-400">
-                    <Globe className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <p className="text-xs font-mono font-medium text-slate-300">Localhost & AI Studio Internal Preview</p>
-                    <p className="text-[11px] text-slate-500">Development sandbox and preview iframe proxy</p>
-                  </div>
-                </div>
-                <span className="text-[11px] font-mono text-emerald-400 font-medium">Authorized</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Complete Audit Logs Tab */}
-      {activeTab === 'logs' && (
-        <div className="bg-slate-900 border border-red-950/60 rounded-2xl p-6 shadow-xl space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <h3 className="text-lg font-bold text-white flex items-center gap-2">
-              <History className="w-5 h-5 text-red-500" />
-              <span>Complete Audit Log History</span>
-            </h3>
-
-            {/* Filter and Search */}
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="relative">
-                <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-slate-500" />
-                <input
-                  type="text"
-                  placeholder="Filter logs..."
-                  value={searchLog}
-                  onChange={(e) => setSearchLog(e.target.value)}
-                  className="bg-slate-950 border border-slate-800 rounded-lg pl-8 pr-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-red-500/50"
-                />
-              </div>
-
-              <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-lg border border-slate-800 text-xs">
-                {(['all', 'auth', 'license', 'admin'] as const).map(type => (
-                  <button
-                    key={type}
-                    onClick={() => setLogFilter(type)}
-                    className={`px-2.5 py-1 rounded-md capitalize font-medium transition-colors ${
-                      logFilter === type ? 'bg-red-600 text-white' : 'text-slate-400 hover:text-white'
-                    }`}
-                  >
-                    {type}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          <div className="space-y-2.5 max-h-[500px] overflow-y-auto custom-scrollbar">
-            {filteredLogs.length === 0 ? (
-              <div className="text-center py-12 text-slate-500 text-xs font-mono">
-                No audit logs found matching your criteria.
-              </div>
-            ) : (
-              filteredLogs.map((log) => (
-                <div key={log.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-3.5 rounded-xl bg-slate-950 border border-slate-800/80 text-xs gap-2">
-                  <div className="flex items-center gap-3">
-                    <div className={`w-2.5 h-2.5 rounded-full shrink-0 ${
-                      log.type === 'auth' ? 'bg-emerald-500 shadow-sm shadow-emerald-500/50' : 
-                      log.type === 'license' ? 'bg-red-500 shadow-sm shadow-red-500/50' : 
-                      'bg-amber-500 shadow-sm shadow-amber-500/50'
-                    }`} />
-                    <span className="text-slate-200 font-mono">{log.message}</span>
-                  </div>
-                  <div className="flex items-center gap-4 text-slate-500 font-mono text-[11px] shrink-0 pl-5 sm:pl-0">
-                    {log.ip && <span className="bg-slate-900 px-2 py-0.5 rounded border border-slate-800">{log.ip}</span>}
-                    <span>{new Date(log.timestamp).toLocaleString()}</span>
-                  </div>
-                </div>
-              ))
-            )}
           </div>
         </div>
       )}
