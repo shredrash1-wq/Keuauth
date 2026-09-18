@@ -33,7 +33,6 @@ import {
   CheckCircle2, 
   AlertCircle,
   ArrowRight,
-  ShieldCheck,
   HelpCircle
 } from 'lucide-react';
 
@@ -563,7 +562,7 @@ export default function App() {
             type="button"
             onClick={handleGoogleSignIn}
             disabled={googleLoading || authLoading}
-            className="w-full flex items-center justify-center gap-3 px-4 py-3 bg-slate-950 hover:bg-slate-800/80 border border-slate-700/80 hover:border-slate-500 text-slate-200 hover:text-white text-sm font-semibold rounded-xl transition-all shadow-md active:scale-[0.99] disabled:opacity-50 cursor-pointer mb-2"
+            className="w-full flex items-center justify-center gap-3 px-4 py-3 bg-slate-950 hover:bg-slate-800/80 border border-slate-700/80 hover:border-slate-500 text-slate-200 hover:text-white text-sm font-semibold rounded-xl transition-all shadow-md active:scale-[0.99] disabled:opacity-50 cursor-pointer mb-5"
           >
             {googleLoading ? (
               <div className="w-4 h-4 border-2 border-slate-400 border-t-white rounded-full animate-spin" />
@@ -577,10 +576,6 @@ export default function App() {
             )}
             <span>{googleLoading ? 'Connecting to Google...' : 'Continue with Google'}</span>
           </button>
-          <div className="flex items-center justify-center gap-1.5 text-[11px] text-slate-400 mb-5">
-            <ShieldCheck className="w-3.5 h-3.5 text-red-400 shrink-0" />
-            <span>Admin Google access restricted to: <strong className="text-slate-300 font-mono">shredrash1@gmail.com</strong></span>
-          </div>
 
           {/* Divider */}
           <div className="relative flex items-center justify-center mb-5">
