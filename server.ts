@@ -729,6 +729,26 @@ async function startServer() {
     });
   };
 
+  app.get("/api/auth", (req, res) => {
+    res.json({
+      success: true,
+      status: "online",
+      message: "REDZONE Client Authentication API Endpoint is online and healthy.",
+      usage: "Send a POST request with JSON payload containing 'type' ('license' | 'login' | 'register'), 'name', 'ownerid', 'key', and 'hwid'.",
+      endpoint: "/api/v1/client/auth"
+    });
+  });
+
+  app.get("/api/v1/client/auth", (req, res) => {
+    res.json({
+      success: true,
+      status: "online",
+      message: "REDZONE Client Authentication API Endpoint is online and healthy.",
+      usage: "Send a POST request with JSON payload containing 'type' ('license' | 'login' | 'register'), 'name', 'ownerid', 'key', and 'hwid'.",
+      endpoint: "/api/v1/client/auth"
+    });
+  });
+
   app.post("/api/auth", handleClientAuth);
   app.post("/api/v1/client/auth", handleClientAuth);
 

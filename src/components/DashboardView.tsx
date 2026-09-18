@@ -125,16 +125,42 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ selectedApp, licen
       </div>
 
       {/* Credentials Card */}
-      <div className="bg-slate-900/90 border border-red-950/60 rounded-2xl p-6 shadow-xl">
-        <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
-          <span>Application API Credentials</span>
-          <span className="text-xs font-mono font-normal text-red-400 bg-red-950/50 px-2 py-0.5 rounded border border-red-900/50">Required for SDK / API</span>
-        </h3>
+      <div className="bg-slate-900/90 border border-red-950/60 rounded-2xl p-6 shadow-xl space-y-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div>
+            <h3 className="text-lg font-bold text-white flex items-center gap-2">
+              <span>Application API Credentials</span>
+              <span className="text-xs font-mono font-normal text-red-400 bg-red-950/50 px-2 py-0.5 rounded border border-red-900/50">Required for SDK / API</span>
+            </h3>
+            <p className="text-xs text-slate-400 mt-0.5">Use these parameters when connecting your client, loader, or SDK.</p>
+          </div>
+        </div>
+
+        {/* Auth API URL Banner */}
+        <div className="bg-slate-950 p-4 rounded-xl border border-red-500/30 flex flex-col md:flex-row md:items-center justify-between gap-3">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold text-white uppercase tracking-wider">Authentication API URL (Endpoint)</span>
+              <span className="px-2 py-0.5 text-[10px] font-mono bg-emerald-950 text-emerald-400 border border-emerald-500/40 rounded">LIVE</span>
+            </div>
+            <p className="font-mono text-xs text-emerald-400 break-all select-all">
+              https://ais-dev-ykpcumjethdawivfgp4r6k-320139288899.asia-southeast1.run.app/api/v1/client/auth
+            </p>
+          </div>
+          <button
+            onClick={() => copyToClipboard('https://ais-dev-ykpcumjethdawivfgp4r6k-320139288899.asia-southeast1.run.app/api/v1/client/auth', 'auth_url')}
+            className="flex items-center justify-center gap-1.5 px-4 py-2 bg-red-600 hover:bg-red-500 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-red-950 shrink-0 cursor-pointer"
+          >
+            {copied === 'auth_url' ? <Check className="w-4 h-4 text-emerald-300" /> : <Copy className="w-4 h-4" />}
+            <span>{copied === 'auth_url' ? 'Copied API URL' : 'Copy API URL'}</span>
+          </button>
+        </div>
+
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="bg-slate-950 p-4 rounded-xl border border-slate-800">
             <div className="flex items-center justify-between mb-1">
               <span className="text-xs text-slate-400 font-medium">Application Name</span>
-              <button onClick={() => copyToClipboard(selectedApp.name, 'name')} className="text-slate-400 hover:text-white">
+              <button onClick={() => copyToClipboard(selectedApp.name, 'name')} className="text-slate-400 hover:text-white cursor-pointer">
                 {copied === 'name' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
               </button>
             </div>
@@ -144,7 +170,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ selectedApp, licen
           <div className="bg-slate-950 p-4 rounded-xl border border-slate-800">
             <div className="flex items-center justify-between mb-1">
               <span className="text-xs text-slate-400 font-medium">Owner ID</span>
-              <button onClick={() => copyToClipboard(selectedApp.ownerid, 'ownerid')} className="text-slate-400 hover:text-white">
+              <button onClick={() => copyToClipboard(selectedApp.ownerid, 'ownerid')} className="text-slate-400 hover:text-white cursor-pointer">
                 {copied === 'ownerid' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
               </button>
             </div>
@@ -154,7 +180,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ selectedApp, licen
           <div className="bg-slate-950 p-4 rounded-xl border border-slate-800">
             <div className="flex items-center justify-between mb-1">
               <span className="text-xs text-slate-400 font-medium">Application Secret</span>
-              <button onClick={() => copyToClipboard(selectedApp.secret, 'secret')} className="text-slate-400 hover:text-white">
+              <button onClick={() => copyToClipboard(selectedApp.secret, 'secret')} className="text-slate-400 hover:text-white cursor-pointer">
                 {copied === 'secret' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
               </button>
             </div>

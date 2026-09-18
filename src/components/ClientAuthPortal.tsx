@@ -1,11 +1,13 @@
 import React, { useState } from 'react';
 import { Application } from '../types';
-import { KeyRound, ShieldCheck, Download, LogOut, RefreshCw, User, Lock, AlertCircle, CheckCircle2, Cpu } from 'lucide-react';
+import { KeyRound, ShieldCheck, Download, LogOut, RefreshCw, User, Lock, AlertCircle, CheckCircle2, Cpu, Copy, Check, Globe, Server, ChevronDown, ChevronUp } from 'lucide-react';
 
 interface ClientAuthPortalProps {
   applications: Application[];
   licenses: any[];
 }
+
+const DEFAULT_CLOUD_RUN_ENDPOINT = 'https://ais-dev-ykpcumjethdawivfgp4r6k-320139288899.asia-southeast1.run.app/api/v1/client/auth';
 
 export const ClientAuthPortal: React.FC<ClientAuthPortalProps> = ({ applications, licenses }) => {
   const [selectedAppId, setSelectedAppId] = useState(applications[0]?.id || '');
@@ -13,6 +15,11 @@ export const ClientAuthPortal: React.FC<ClientAuthPortalProps> = ({ applications
   const [licenseKey, setLicenseKey] = useState('');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [copiedEndpoint, setCopiedEndpoint] = useState(false);
+  const [showEndpointSettings, setShowEndpointSettings] = useState(false);
+  const [customEndpoint, setCustomEndpoint] = useState(() => {
+    return localStorage.getItem('redzone_custom_auth_endpoint') || '';
+  });
   const [hwid, setHwid] = useState(() => {
     const saved = localStorage.getItem('redzone_hwid');
     if (saved) return saved;
@@ -35,6 +42,23 @@ export const ClientAuthPortal: React.FC<ClientAuthPortalProps> = ({ applications
     return savedSession ? JSON.parse(savedSession) : null;
   });
 
+  const activeEndpointUrl = customEndpoint.trim() || DEFAULT_CLOUD_RUN_ENDPOINT;
+
+  const handleCopyEndpoint = () => {
+    navigator.clipboard.writeText(activeEndpointUrl);
+    setCopiedEndpoint(true);
+    setTimeout(() => setCopiedEndpoint(false), 2000);
+  };
+
+  const handleSaveEndpoint = (url: string) => {
+    setCustomEndpoint(url);
+    if (url.trim()) {
+      localStorage.setItem('redzone_custom_auth_endpoint', url.trim());
+    } else {
+      localStorage.removeItem('redzone_custom_auth_endpoint');
+    }
+  };
+
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
     if (loading) return;
@@ -54,39 +78,54 @@ export const ClientAuthPortal: React.FC<ClientAuthPortalProps> = ({ applications
     };
 
     try {
-      // Primary call to secure server-side proxy /api/auth (no frontend secrets exposed)
       let res: Response;
-      try {
-        res = await fetch('/api/auth', {
+
+      // If user specified custom endpoint, use it directly
+      if (customEndpoint.trim()) {
+        res = await fetch(customEndpoint.trim(), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
           body: JSON.stringify(payload)
         });
-      } catch (networkErr: any) {
-        // Fallback directly to client auth route if /api/auth network connection fails
+      } else {
+        // Primary call to secure proxy /api/auth
         try {
-          res = await fetch('/api/v1/client/auth', {
+          res = await fetch('/api/auth', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
             body: JSON.stringify(payload)
           });
-        } catch {
-          throw networkErr;
-        }
-      }
-
-      // If /api/auth returned 404 (e.g. standalone routing edge case), try /api/v1/client/auth
-      if (res.status === 404) {
-        try {
-          const fallbackRes = await fetch('/api/v1/client/auth', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-            body: JSON.stringify(payload)
-          });
-          if (fallbackRes.ok || fallbackRes.status < 500) {
-            res = fallbackRes;
+        } catch (networkErr: any) {
+          // Fallback directly to client auth route or Cloud Run endpoint
+          try {
+            res = await fetch('/api/v1/client/auth', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+              body: JSON.stringify(payload)
+            });
+          } catch {
+            // Direct Cloud Run CORS fallback
+            res = await fetch(DEFAULT_CLOUD_RUN_ENDPOINT, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+              body: JSON.stringify(payload)
+            });
           }
-        } catch {}
+        }
+
+        // If /api/auth returned 404 (e.g. standalone routing edge case), try /api/v1/client/auth
+        if (res.status === 404) {
+          try {
+            const fallbackRes = await fetch('/api/v1/client/auth', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+              body: JSON.stringify(payload)
+            });
+            if (fallbackRes.ok || fallbackRes.status < 500) {
+              res = fallbackRes;
+            }
+          } catch {}
+        }
       }
 
       let data: any;
@@ -134,7 +173,7 @@ export const ClientAuthPortal: React.FC<ClientAuthPortalProps> = ({ applications
         }
       }
     } catch (err: any) {
-      setError(`Unable to connect to Redzone authentication server: ${err.message || 'Network error'}`);
+      setError(`Unable to connect to Redzone authentication server. Make sure your API Endpoint URL is set to: ${DEFAULT_CLOUD_RUN_ENDPOINT}`);
     } finally {
       setLoading(false);
     }
@@ -230,6 +269,68 @@ export const ClientAuthPortal: React.FC<ClientAuthPortalProps> = ({ applications
           </div>
           <h1 className="text-2xl font-extrabold text-white tracking-tight">REDZONE Client Auth</h1>
           <p className="text-xs text-slate-400 mt-1">Secure KeyAuth & User Account Portal</p>
+        </div>
+
+        {/* API Endpoint Banner & Switcher */}
+        <div className="mb-5 bg-slate-950/80 rounded-xl border border-red-950/80 p-3 space-y-2">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+              </span>
+              <span className="text-[11px] font-bold text-slate-300 uppercase tracking-wider">Auth API Endpoint</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={handleCopyEndpoint}
+                className="flex items-center gap-1 px-2.5 py-1 bg-slate-900 hover:bg-slate-800 text-slate-300 rounded-lg text-[11px] font-medium border border-slate-800 transition-all cursor-pointer"
+                title="Copy API Endpoint URL"
+              >
+                {copiedEndpoint ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3 text-slate-400" />}
+                <span>{copiedEndpoint ? 'Copied' : 'Copy URL'}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowEndpointSettings(!showEndpointSettings)}
+                className="p-1 text-slate-400 hover:text-white rounded-lg hover:bg-slate-900 transition-all cursor-pointer"
+                title="Configure custom endpoint URL"
+              >
+                {showEndpointSettings ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+              </button>
+            </div>
+          </div>
+
+          <p className="font-mono text-[11px] text-emerald-400 truncate select-all">
+            {activeEndpointUrl}
+          </p>
+
+          {showEndpointSettings && (
+            <div className="pt-2 border-t border-slate-800/80 space-y-2">
+              <label className="block text-[11px] font-medium text-slate-400">
+                Custom Authentication API URL (Optional)
+              </label>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  placeholder={DEFAULT_CLOUD_RUN_ENDPOINT}
+                  value={customEndpoint}
+                  onChange={(e) => handleSaveEndpoint(e.target.value)}
+                  className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1.5 text-white text-xs font-mono focus:outline-none focus:ring-1 focus:ring-red-500"
+                />
+                {customEndpoint && (
+                  <button
+                    type="button"
+                    onClick={() => handleSaveEndpoint('')}
+                    className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] rounded-lg"
+                  >
+                    Reset
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Mode Selector Tabs */}
