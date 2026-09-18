@@ -8,9 +8,21 @@ interface HeaderProps {
   setSelectedApp: (app: Application) => void;
   onNewAppClick: () => void;
   onOpenMobileMenu: () => void;
+  userEmail?: string;
+  userPhoto?: string;
 }
 
-export const Header: React.FC<HeaderProps> = ({ applications, selectedApp, setSelectedApp, onNewAppClick, onOpenMobileMenu }) => {
+export const Header: React.FC<HeaderProps> = ({ 
+  applications, 
+  selectedApp, 
+  setSelectedApp, 
+  onNewAppClick, 
+  onOpenMobileMenu,
+  userEmail,
+  userPhoto
+}) => {
+  const displayEmail = userEmail || 'developer@redzone.auth';
+  const initial = displayEmail[0]?.toUpperCase() || 'D';
   return (
     <header className="h-18 bg-slate-950/80 backdrop-blur-md border-b border-red-950/40 px-4 sm:px-8 flex items-center justify-between sticky top-0 z-30">
       {/* Mobile Menu Button & Application Selector */}
@@ -65,12 +77,21 @@ export const Header: React.FC<HeaderProps> = ({ applications, selectedApp, setSe
           </button>
 
           <div className="flex items-center gap-2.5 pl-1 sm:pl-2">
-            <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-gradient-to-br from-red-600 to-red-900 flex items-center justify-center font-bold text-white shadow-md shadow-red-950 text-xs sm:text-sm">
-              RZ
-            </div>
+            {userPhoto ? (
+              <img 
+                src={userPhoto} 
+                alt="Avatar" 
+                className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl border border-red-500/40 object-cover shadow-md shadow-red-950" 
+                referrerPolicy="no-referrer"
+              />
+            ) : (
+              <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-gradient-to-br from-red-600 to-red-900 flex items-center justify-center font-bold text-white shadow-md shadow-red-950 text-xs sm:text-sm">
+                {initial}
+              </div>
+            )}
             <div className="hidden md:block text-left">
-              <p className="text-xs font-semibold text-slate-200">Administrator</p>
-              <p className="text-[10px] text-slate-400 font-mono">owner@redzone.auth</p>
+              <p className="text-xs font-semibold text-slate-200">Developer Account</p>
+              <p className="text-[10px] text-slate-400 font-mono truncate max-w-[150px]">{displayEmail}</p>
             </div>
           </div>
         </div>

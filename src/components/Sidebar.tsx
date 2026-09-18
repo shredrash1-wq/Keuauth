@@ -22,9 +22,10 @@ interface SidebarProps {
   mobileOpen: boolean;
   setMobileOpen: (open: boolean) => void;
   onLogout: () => void;
+  userEmail?: string;
 }
 
-export const Sidebar: React.FC<SidebarProps> = ({ currentTab, setCurrentTab, onOpenApiTester, mobileOpen, setMobileOpen, onLogout }) => {
+export const Sidebar: React.FC<SidebarProps> = ({ currentTab, setCurrentTab, onOpenApiTester, mobileOpen, setMobileOpen, onLogout, userEmail }) => {
   const menuItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'applications', label: 'Applications', icon: Layers },
@@ -103,6 +104,11 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, setCurrentTab, onO
 
         {/* API Tester & Logout */}
         <div className="p-4 border-t border-red-950/40 bg-slate-900/40 space-y-2">
+          {userEmail && (
+            <div className="px-2 py-1.5 rounded-lg bg-slate-950/60 border border-slate-800 text-[11px] text-slate-400 font-mono truncate text-center">
+              {userEmail}
+            </div>
+          )}
           <button
             onClick={() => {
               onOpenApiTester();

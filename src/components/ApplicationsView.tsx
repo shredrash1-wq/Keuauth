@@ -28,7 +28,12 @@ export const ApplicationsView: React.FC<ApplicationsViewProps> = ({ applications
 
     try {
       const cleanVersion = version.trim() || '1.0.0';
-      const cleanLink = downloadLink.trim() || 'https://redzone.auth/downloads/app.exe';
+      let cleanLink = downloadLink.trim();
+      if (!cleanLink) {
+        cleanLink = 'https://redzone.auth/downloads/app.exe';
+      } else if (!/^https?:\/\//i.test(cleanLink)) {
+        cleanLink = `https://${cleanLink}`;
+      }
       await onAddApp(trimmedName, cleanVersion, cleanLink);
       setName('');
       setVersion('1.0.0');
@@ -157,10 +162,13 @@ export const ApplicationsView: React.FC<ApplicationsViewProps> = ({ applications
                 <label className="block text-xs font-medium text-slate-400 mb-1">Application Name</label>
                 <input
                   type="text"
-                  required
+                  autoComplete="off"
                   placeholder="e.g. RedZone Cheat Suite"
                   value={name}
-                  onChange={(e) => setName(e.target.value)}
+                  onChange={(e) => {
+                    setName(e.target.value);
+                    if (error) setError(null);
+                  }}
                   className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-red-500/50"
                 />
               </div>
@@ -169,10 +177,13 @@ export const ApplicationsView: React.FC<ApplicationsViewProps> = ({ applications
                 <label className="block text-xs font-medium text-slate-400 mb-1">Version</label>
                 <input
                   type="text"
-                  required
+                  autoComplete="off"
                   placeholder="1.0.0"
                   value={version}
-                  onChange={(e) => setVersion(e.target.value)}
+                  onChange={(e) => {
+                    setVersion(e.target.value);
+                    if (error) setError(null);
+                  }}
                   className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-red-500/50 font-mono"
                 />
               </div>
@@ -181,9 +192,13 @@ export const ApplicationsView: React.FC<ApplicationsViewProps> = ({ applications
                 <label className="block text-xs font-medium text-slate-400 mb-1">Download Link (Optional)</label>
                 <input
                   type="text"
+                  autoComplete="off"
                   placeholder="https://redzone.auth/downloads/app.exe"
                   value={downloadLink}
-                  onChange={(e) => setDownloadLink(e.target.value)}
+                  onChange={(e) => {
+                    setDownloadLink(e.target.value);
+                    if (error) setError(null);
+                  }}
                   className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-red-500/50 font-mono"
                 />
               </div>
@@ -199,7 +214,7 @@ export const ApplicationsView: React.FC<ApplicationsViewProps> = ({ applications
                 <button
                   type="submit"
                   disabled={loading}
-                  className="px-5 py-2 bg-red-600 hover:bg-red-500 text-white text-sm font-medium rounded-xl shadow-lg shadow-red-950 transition-all disabled:opacity-50 flex items-center gap-2"
+                  className="px-5 py-2 bg-red-600 hover:bg-red-500 text-white text-sm font-medium rounded-xl shadow-lg shadow-red-950 transition-all disabled:opacity-50 flex items-center gap-2 cursor-pointer"
                 >
                   {loading && <div className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin" />}
                   <span>{loading ? 'Creating...' : 'Create Application'}</span>
