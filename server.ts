@@ -76,11 +76,23 @@ async function startServer() {
 
   app.use(express.json());
 
-  // Global CORS Middleware
+  // Global CORS Middleware with authorized domains
   app.use((req, res, next) => {
-    res.setHeader('Access-Control-Allow-Origin', '*');
+    const origin = req.headers.origin;
+    const allowedOrigins = [
+      'https://redzone-auth.vercel.app',
+      'http://localhost:3000',
+      'http://127.0.0.1:3000'
+    ];
+
+    if (origin && (allowedOrigins.includes(origin) || origin.endsWith('.vercel.app') || origin.endsWith('.run.app'))) {
+      res.setHeader('Access-Control-Allow-Origin', origin);
+    } else {
+      res.setHeader('Access-Control-Allow-Origin', '*');
+    }
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
     if (req.method === 'OPTIONS') {
       return res.status(200).end();
     }
@@ -101,6 +113,29 @@ async function startServer() {
       appId: "system"
     }
   ];
+
+  function ensureDefaultApp(): Application {
+    if (applications.length === 0) {
+      const defApp: Application = {
+        id: "app_default",
+        name: "Default App",
+        secret: "rz_sec_default_key_9981249",
+        ownerid: "usr_admin",
+        version: "1.0.0",
+        status: "active",
+        createdAt: new Date().toISOString(),
+        totalUsers: 0,
+        activeLicenses: 0,
+        downloadLink: "https://redzone.auth/downloads/app.exe"
+      };
+      applications.push(defApp);
+      if (db) {
+        setDoc(doc(db, "applications", defApp.id), defApp).catch(() => {});
+      }
+      return defApp;
+    }
+    return applications[0];
+  }
 
   // Load initial state from Firestore with timeout protection
   async function loadFromFirestore() {
@@ -285,9 +320,11 @@ async function startServer() {
   });
 
   app.post("/api/v1/licenses/generate", async (req, res) => {
+    if (db) await loadFromFirestore();
     const { appId, count = 1, durationDays = 30, level = 1, note } = req.body;
     const generated: LicenseKey[] = [];
-    const targetAppId = appId || applications[0]?.id || "app_default";
+    const targetApp = (appId ? applications.find(a => a.id === appId) : null) || applications[0] || ensureDefaultApp();
+    const targetAppId = targetApp.id;
 
     for (let i = 0; i < Number(count); i++) {
       const randomPart = Math.random().toString(36).substring(2, 6).toUpperCase();
@@ -297,11 +334,11 @@ async function startServer() {
         id: `key_${Date.now()}_${i}`,
         key: keyStr,
         appId: targetAppId,
-        durationDays: Number(durationDays),
-        level: Number(level),
+        durationDays: Number(durationDays) || 30,
+        level: Number(level) || 1,
         status: "unused",
         createdAt: new Date().toISOString(),
-        note: note || "Generated via REDZONE panel"
+        note: note || `Generated for ${targetApp.name}`
       };
       licenseKeys.unshift(newKey);
       generated.push(newKey);
@@ -315,17 +352,26 @@ async function startServer() {
       }
     }
 
-    const targetApp = applications.find(a => a.id === targetAppId);
-    if (targetApp) {
-      targetApp.activeLicenses += generated.length;
-      if (db) {
-        try {
-          await updateDoc(doc(db, "applications", targetApp.id), { activeLicenses: targetApp.activeLicenses });
-        } catch {}
-      }
+    targetApp.activeLicenses = (targetApp.activeLicenses || 0) + generated.length;
+    if (db) {
+      try {
+        await updateDoc(doc(db, "applications", targetApp.id), { activeLicenses: targetApp.activeLicenses });
+      } catch {}
     }
 
-    res.json({ success: true, keys: generated });
+    auditLogs.unshift({
+      id: `log_${Date.now()}`,
+      timestamp: new Date().toISOString(),
+      type: "admin",
+      message: `Generated ${generated.length} license key(s) for application '${targetApp.name}'.`,
+      appId: targetApp.id
+    });
+
+    res.json({ 
+      success: true, 
+      keys: generated, 
+      message: `Successfully generated ${generated.length} license key(s) for ${targetApp.name}.` 
+    });
   });
 
   app.post("/api/v1/licenses/:id/action", async (req, res) => {
@@ -361,42 +407,69 @@ async function startServer() {
   app.get("/api/v1/users", async (req, res) => {
     if (db) await loadFromFirestore();
     const { appId } = req.query;
-    const filtered = appId ? authUsers.filter(u => u.appId === appId) : authUsers;
+    const filtered = appId && appId !== 'all' ? authUsers.filter(u => u.appId === appId) : authUsers;
     res.json({ success: true, users: filtered });
   });
 
   app.post("/api/v1/users/create", async (req, res) => {
+    if (db) await loadFromFirestore();
     const { appId, username, password, durationDays = 30, level = 1 } = req.body;
     if (!username || !password) {
-      return res.json({ success: false, message: "Username and password required." });
+      return res.status(400).json({ success: false, message: "Username and password are required." });
     }
-    const targetAppId = appId || applications[0]?.id;
-    if (authUsers.some(u => u.username === username && u.appId === targetAppId)) {
-      return res.json({ success: false, message: "Username already exists for this application." });
+    const cleanUser = String(username).trim();
+    const cleanPass = String(password).trim();
+    if (cleanUser.length < 2) {
+      return res.status(400).json({ success: false, message: "Username must be at least 2 characters." });
+    }
+    if (cleanPass.length < 3) {
+      return res.status(400).json({ success: false, message: "Password must be at least 3 characters." });
+    }
+
+    const targetApp = (appId ? applications.find(a => a.id === appId) : null) || applications[0] || ensureDefaultApp();
+    const targetAppId = targetApp.id;
+
+    if (authUsers.some(u => u.username.toLowerCase() === cleanUser.toLowerCase() && u.appId === targetAppId)) {
+      return res.status(400).json({ success: false, message: `Username "${cleanUser}" already exists for ${targetApp.name}.` });
     }
 
     const newUser: AuthUser = {
-      id: `u_${Date.now()}`,
-      username,
-      password,
+      id: `u_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      username: cleanUser,
+      password: cleanPass,
       appId: targetAppId,
-      durationDays: Number(durationDays),
-      level: Number(level),
+      durationDays: Number(durationDays) || 30,
+      level: Number(level) || 1,
       created: new Date().toISOString(),
       lastLogin: "Never",
       banned: false
     };
 
     authUsers.unshift(newUser);
+    targetApp.totalUsers = (targetApp.totalUsers || 0) + 1;
+
     if (db) {
       try {
         await setDoc(doc(db, "users", newUser.id), newUser);
+        await updateDoc(doc(db, "applications", targetApp.id), { totalUsers: targetApp.totalUsers });
       } catch (e) {
         console.error("Firestore save user error:", e);
       }
     }
 
-    res.json({ success: true, user: newUser });
+    auditLogs.unshift({
+      id: `log_${Date.now()}`,
+      timestamp: new Date().toISOString(),
+      type: "admin",
+      message: `Created user account '${newUser.username}' for application '${targetApp.name}'.`,
+      appId: targetApp.id
+    });
+
+    res.json({ 
+      success: true, 
+      user: newUser, 
+      message: `User account "${newUser.username}" created successfully for ${targetApp.name}.` 
+    });
   });
 
   app.post("/api/v1/users/:id/action", async (req, res) => {
@@ -520,6 +593,18 @@ async function startServer() {
         createdate: foundKey.createdAt,
         lastlogin: new Date().toISOString()
       }
+    });
+  });
+
+  app.get("/api/v1/authorized-domains", (req, res) => {
+    res.json({
+      success: true,
+      authorizedDomains: [
+        "https://redzone-auth.vercel.app",
+        "redzone-auth.vercel.app",
+        "localhost:3000"
+      ],
+      currentOrigin: req.headers.origin || "same-origin"
     });
   });
 

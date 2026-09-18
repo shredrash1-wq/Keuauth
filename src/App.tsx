@@ -33,9 +33,12 @@ import {
   CheckCircle2, 
   AlertCircle,
   ArrowRight,
-  Sparkles,
+  ShieldCheck,
   HelpCircle
 } from 'lucide-react';
+
+// Authorized Administrator Gmail for Google Sign-In
+const AUTHORIZED_ADMIN_GMAIL = 'shredrash1@gmail.com';
 
 export default function App() {
   const [firebaseUser, setFirebaseUser] = useState<User | null>(null);
@@ -91,8 +94,22 @@ export default function App() {
   const [isApiTesterOpen, setIsApiTesterOpen] = useState(false);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user && !user.isAnonymous) {
+        const isGoogle = user.providerData.some(p => p.providerId === 'google.com');
+        const userEmail = (user.email || '').trim().toLowerCase();
+
+        // Enforce Google Sign-In restriction for Admin Panel
+        if (isGoogle && userEmail !== AUTHORIZED_ADMIN_GMAIL.toLowerCase()) {
+          await signOut(auth).catch(() => {});
+          localStorage.removeItem('redzone_active_dev');
+          localStorage.removeItem('redzone_dev_display_name');
+          setFirebaseUser(null);
+          setDevLoggedIn(false);
+          setDevError(`Access Denied: Google sign-in is restricted exclusively to authorized administrator (${AUTHORIZED_ADMIN_GMAIL}). "${user.email}" is not authorized.`);
+          return;
+        }
+
         setFirebaseUser(user);
         setDevLoggedIn(true);
         if (user.displayName) {
@@ -103,7 +120,14 @@ export default function App() {
       } else {
         const cachedDev = localStorage.getItem('redzone_active_dev');
         if (cachedDev) {
-          setDevLoggedIn(true);
+          // If cached email is a restricted unauthorized google email, clear it
+          if (cachedDev.includes('@') && cachedDev.toLowerCase().endsWith('@gmail.com') && cachedDev.toLowerCase() !== AUTHORIZED_ADMIN_GMAIL.toLowerCase()) {
+            localStorage.removeItem('redzone_active_dev');
+            setDevLoggedIn(false);
+            setFirebaseUser(null);
+          } else {
+            setDevLoggedIn(true);
+          }
         } else {
           setDevLoggedIn(false);
           setFirebaseUser(null);
@@ -171,6 +195,19 @@ export default function App() {
       provider.setCustomParameters({ prompt: 'select_account' });
       const result = await signInWithPopup(auth, provider);
       const user = result.user;
+      const userEmail = (user.email || '').trim().toLowerCase();
+
+      // Access restriction: Google Sign-in to Admin Panel is strictly allowed ONLY for shredrash1@gmail.com
+      if (userEmail !== AUTHORIZED_ADMIN_GMAIL.toLowerCase()) {
+        await signOut(auth).catch(() => {});
+        localStorage.removeItem('redzone_active_dev');
+        localStorage.removeItem('redzone_dev_display_name');
+        setFirebaseUser(null);
+        setDevLoggedIn(false);
+        setDevError(`Access Denied: Google sign-in to the admin panel is restricted exclusively to authorized administrator (${AUTHORIZED_ADMIN_GMAIL}). The account "${user.email}" does not have admin permissions.`);
+        return;
+      }
+
       setFirebaseUser(user);
       setDevLoggedIn(true);
       localStorage.setItem('redzone_active_dev', user.email || user.displayName || 'developer');
@@ -180,7 +217,8 @@ export default function App() {
           await setDoc(doc(db, 'developers', user.uid), {
             id: user.uid,
             email: user.email,
-            displayName: user.displayName || 'Developer',
+            displayName: user.displayName || 'Administrator',
+            role: 'superadmin',
             photoURL: user.photoURL || '',
             lastLogin: new Date().toISOString()
           }, { merge: true });
@@ -336,13 +374,6 @@ export default function App() {
     }
   };
 
-  // One-click demo access for quick testing
-  const handleQuickDemoAccess = () => {
-    const demoEmail = 'developer@redzone.auth';
-    localStorage.setItem('redzone_active_dev', demoEmail);
-    setDevLoggedIn(true);
-  };
-
   const handleLogout = async () => {
     try {
       await signOut(auth);
@@ -495,14 +526,16 @@ export default function App() {
   };
 
   const handleGenerateKeys = async (appId: string, count: number, durationDays: number, level: number, note: string) => {
-    try {
-      await fetch('/api/v1/licenses/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ appId, count, durationDays, level, note })
-      });
-      fetchData();
-    } catch {}
+    const res = await fetch('/api/v1/licenses/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ appId, count, durationDays, level, note })
+    });
+    const data = await res.json();
+    if (!res.ok || !data.success) {
+      throw new Error(data.error || 'Failed to generate license keys');
+    }
+    fetchData();
   };
 
   // Developer Login & Registration Screen
@@ -530,7 +563,7 @@ export default function App() {
             type="button"
             onClick={handleGoogleSignIn}
             disabled={googleLoading || authLoading}
-            className="w-full flex items-center justify-center gap-3 px-4 py-3 bg-slate-950 hover:bg-slate-800/80 border border-slate-700/80 hover:border-slate-500 text-slate-200 hover:text-white text-sm font-semibold rounded-xl transition-all shadow-md active:scale-[0.99] disabled:opacity-50 cursor-pointer mb-5"
+            className="w-full flex items-center justify-center gap-3 px-4 py-3 bg-slate-950 hover:bg-slate-800/80 border border-slate-700/80 hover:border-slate-500 text-slate-200 hover:text-white text-sm font-semibold rounded-xl transition-all shadow-md active:scale-[0.99] disabled:opacity-50 cursor-pointer mb-2"
           >
             {googleLoading ? (
               <div className="w-4 h-4 border-2 border-slate-400 border-t-white rounded-full animate-spin" />
@@ -544,6 +577,10 @@ export default function App() {
             )}
             <span>{googleLoading ? 'Connecting to Google...' : 'Continue with Google'}</span>
           </button>
+          <div className="flex items-center justify-center gap-1.5 text-[11px] text-slate-400 mb-5">
+            <ShieldCheck className="w-3.5 h-3.5 text-red-400 shrink-0" />
+            <span>Admin Google access restricted to: <strong className="text-slate-300 font-mono">shredrash1@gmail.com</strong></span>
+          </div>
 
           {/* Divider */}
           <div className="relative flex items-center justify-center mb-5">
@@ -661,19 +698,6 @@ export default function App() {
               {!authLoading && <ArrowRight className="w-4 h-4" />}
             </button>
           </form>
-
-          {/* Quick Sandbox Bypass */}
-          <div className="mt-6 pt-4 border-t border-slate-800/80 flex items-center justify-between text-xs text-slate-500">
-            <span>Need quick access?</span>
-            <button
-              type="button"
-              onClick={handleQuickDemoAccess}
-              className="text-red-400 hover:text-red-300 font-medium inline-flex items-center gap-1 cursor-pointer"
-            >
-              <Sparkles className="w-3 h-3" />
-              <span>Enter Sandbox Mode</span>
-            </button>
-          </div>
 
           {/* Password Reset Modal */}
           {showResetModal && (

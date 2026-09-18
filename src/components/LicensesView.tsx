@@ -1,12 +1,12 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { LicenseKey, Application } from '../types';
-import { KeyRound, Plus, Trash2, Copy, Check, Lock, Unlock, Ban, Snowflake, Flame } from 'lucide-react';
+import { KeyRound, Plus, Trash2, Copy, Check, Lock, Unlock, Ban, Snowflake, Flame, AppWindow, AlertCircle, CheckCircle2, RefreshCw } from 'lucide-react';
 
 interface LicensesViewProps {
   licenses: LicenseKey[];
   applications: Application[];
   selectedApp: Application | null;
-  onGenerateKeys: (appId: string, count: number, durationDays: number, level: number, note: string) => void;
+  onGenerateKeys: (appId: string, count: number, durationDays: number, level: number, note: string) => Promise<void> | void;
   onRefresh: () => void;
 }
 
@@ -16,14 +16,47 @@ export const LicensesView: React.FC<LicensesViewProps> = ({ licenses, applicatio
   const [level, setLevel] = useState(1);
   const [note, setNote] = useState('');
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
+  const [generating, setGenerating] = useState(false);
+  const [statusFeedback, setStatusFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
-  const appId = selectedApp?.id || applications[0]?.id || '';
+  // Application selection for key generation
+  const [targetAppId, setTargetAppId] = useState<string>(selectedApp?.id || applications[0]?.id || 'app_default');
+  
+  // Filter for table
+  const [filterAppId, setFilterAppId] = useState<string>(selectedApp?.id || 'all');
 
-  const handleGenerate = (e: React.FormEvent) => {
+  useEffect(() => {
+    if (selectedApp?.id) {
+      setTargetAppId(selectedApp.id);
+      setFilterAppId(selectedApp.id);
+    } else if (applications[0]?.id && (!targetAppId || targetAppId === 'app_default')) {
+      setTargetAppId(applications[0].id);
+    }
+  }, [selectedApp, applications]);
+
+  const handleGenerate = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!appId) return;
-    onGenerateKeys(appId, count, durationDays, level, note);
-    setNote('');
+    setStatusFeedback(null);
+    const effectiveAppId = targetAppId || selectedApp?.id || applications[0]?.id || 'app_default';
+
+    setGenerating(true);
+    try {
+      await onGenerateKeys(effectiveAppId, count, durationDays, level, note);
+      const appName = applications.find(a => a.id === effectiveAppId)?.name || 'Default App';
+      setStatusFeedback({
+        type: 'success',
+        message: `Generated ${count} license key(s) successfully for ${appName}!`
+      });
+      setNote('');
+      setTimeout(() => setStatusFeedback(null), 5000);
+    } catch (err: any) {
+      setStatusFeedback({
+        type: 'error',
+        message: err.message || 'Failed to generate license keys.'
+      });
+    } finally {
+      setGenerating(false);
+    }
   };
 
   const handleKeyAction = async (id: string, action: string) => {
@@ -34,7 +67,9 @@ export const LicensesView: React.FC<LicensesViewProps> = ({ licenses, applicatio
         body: JSON.stringify({ action })
       });
       onRefresh();
-    } catch {}
+    } catch (err) {
+      console.warn('Failed license action:', err);
+    }
   };
 
   const copyToClipboard = (keyText: string) => {
@@ -43,7 +78,14 @@ export const LicensesView: React.FC<LicensesViewProps> = ({ licenses, applicatio
     setTimeout(() => setCopiedKey(null), 2000);
   };
 
-  const filteredLicenses = licenses.filter(l => l.appId === appId);
+  const filteredLicenses = filterAppId === 'all' 
+    ? licenses 
+    : licenses.filter(l => l.appId === filterAppId);
+
+  const getAppName = (appId: string) => {
+    const found = applications.find(a => a.id === appId);
+    return found ? found.name : 'Default App';
+  };
 
   return (
     <div className="p-4 sm:p-8 space-y-8 max-w-7xl mx-auto">
@@ -52,76 +94,158 @@ export const LicensesView: React.FC<LicensesViewProps> = ({ licenses, applicatio
         <p className="text-slate-400 text-sm mt-1">Generate and control license keys with full action suite (Delete, Lock HWID, Unlock HWID, Ban, Freeze).</p>
       </div>
 
+      {/* Feedback Alerts */}
+      {statusFeedback && (
+        <div className={`p-4 rounded-xl text-sm flex items-center justify-between shadow-lg ${
+          statusFeedback.type === 'success' 
+            ? 'bg-emerald-950/70 border border-emerald-800 text-emerald-300' 
+            : 'bg-red-950/70 border border-red-800 text-red-300'
+        }`}>
+          <div className="flex items-center gap-2">
+            {statusFeedback.type === 'success' ? (
+              <CheckCircle2 className="w-5 h-5 flex-shrink-0 text-emerald-400" />
+            ) : (
+              <AlertCircle className="w-5 h-5 flex-shrink-0 text-red-400" />
+            )}
+            <span>{statusFeedback.message}</span>
+          </div>
+          <button onClick={() => setStatusFeedback(null)} className="text-xs underline hover:text-white">Dismiss</button>
+        </div>
+      )}
+
       {/* Generator Card */}
       <div className="bg-slate-900 border border-red-950/60 rounded-2xl p-6 shadow-xl">
         <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
           <KeyRound className="w-5 h-5 text-red-500" />
           <span>Quick License Generator</span>
         </h3>
-        <form onSubmit={handleGenerate} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 items-end">
-          <div>
-            <label className="block text-xs font-medium text-slate-400 mb-1">Quantity</label>
-            <input
-              type="number"
-              min={1}
-              max={100}
-              value={count}
-              onChange={(e) => setCount(Number(e.target.value))}
-              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-red-500/50"
-            />
+        <form onSubmit={handleGenerate} className="space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {/* Target Application Selector */}
+            <div>
+              <label className="block text-xs font-medium text-slate-400 mb-1 flex items-center gap-1">
+                <AppWindow className="w-3.5 h-3.5 text-red-500" />
+                <span>Target Application *</span>
+              </label>
+              <select
+                value={targetAppId}
+                onChange={(e) => setTargetAppId(e.target.value)}
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-red-500/50"
+              >
+                {applications.length === 0 ? (
+                  <option value="app_default">Default App</option>
+                ) : (
+                  applications.map(app => (
+                    <option key={app.id} value={app.id}>
+                      {app.name} (v{app.version})
+                    </option>
+                  ))
+                )}
+              </select>
+            </div>
+
+            {/* Quantity */}
+            <div>
+              <label className="block text-xs font-medium text-slate-400 mb-1">Quantity</label>
+              <input
+                type="number"
+                min={1}
+                max={100}
+                value={count}
+                onChange={(e) => setCount(Number(e.target.value))}
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-red-500/50"
+              />
+            </div>
+
+            {/* Duration */}
+            <div>
+              <label className="block text-xs font-medium text-slate-400 mb-1">Duration (Days)</label>
+              <input
+                type="number"
+                min={1}
+                value={durationDays}
+                onChange={(e) => setDurationDays(Number(e.target.value))}
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-red-500/50"
+              />
+            </div>
           </div>
-          <div>
-            <label className="block text-xs font-medium text-slate-400 mb-1">Duration (Days)</label>
-            <input
-              type="number"
-              min={1}
-              value={durationDays}
-              onChange={(e) => setDurationDays(Number(e.target.value))}
-              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-red-500/50"
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-slate-400 mb-1">Access Level</label>
-            <select
-              value={level}
-              onChange={(e) => setLevel(Number(e.target.value))}
-              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-red-500/50"
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 items-end pt-1">
+            {/* Access Level */}
+            <div>
+              <label className="block text-xs font-medium text-slate-400 mb-1">Access Level</label>
+              <select
+                value={level}
+                onChange={(e) => setLevel(Number(e.target.value))}
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-red-500/50"
+              >
+                <option value={1}>Level 1 (Standard)</option>
+                <option value={2}>Level 2 (VIP)</option>
+                <option value={3}>Level 3 (Owner)</option>
+              </select>
+            </div>
+
+            {/* Note */}
+            <div>
+              <label className="block text-xs font-medium text-slate-400 mb-1">Note (Optional)</label>
+              <input
+                type="text"
+                placeholder="e.g. VIP Key / Tournament"
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-red-500/50"
+              />
+            </div>
+
+            {/* Submit Button */}
+            <button
+              type="submit"
+              disabled={generating}
+              className="w-full py-2.5 bg-red-600 hover:bg-red-500 text-white font-bold text-sm rounded-xl shadow-lg shadow-red-950 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
             >
-              <option value={1}>Level 1 (Standard)</option>
-              <option value={2}>Level 2 (VIP)</option>
-              <option value={3}>Level 3 (Owner)</option>
-            </select>
+              <Plus className="w-4 h-4" />
+              <span>{generating ? 'Generating...' : 'Generate Key(s)'}</span>
+            </button>
           </div>
-          <div>
-            <label className="block text-xs font-medium text-slate-400 mb-1">Note (Optional)</label>
-            <input
-              type="text"
-              placeholder="e.g. VIP Key"
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-red-500/50"
-            />
-          </div>
-          <button
-            type="submit"
-            className="w-full py-2.5 bg-red-600 hover:bg-red-500 text-white font-bold text-sm rounded-xl shadow-lg shadow-red-950 transition-all flex items-center justify-center gap-2"
-          >
-            <Plus className="w-4 h-4" />
-            <span>Generate Key(s)</span>
-          </button>
         </form>
       </div>
 
       {/* Licenses Table */}
       <div className="bg-slate-900 border border-red-950/60 rounded-2xl shadow-xl overflow-hidden">
-        <div className="px-6 py-4 bg-slate-950 border-b border-red-950/40 flex items-center justify-between">
-          <h3 className="font-bold text-white text-sm">License Keys ({filteredLicenses.length})</h3>
+        <div className="px-6 py-4 bg-slate-950 border-b border-red-950/40 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <h3 className="font-bold text-white text-sm">License Keys ({filteredLicenses.length})</h3>
+            <button 
+              onClick={onRefresh}
+              className="p-1 hover:bg-slate-800 text-slate-400 hover:text-white rounded-lg transition-colors"
+              title="Refresh licenses"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+            </button>
+          </div>
+
+          {/* Filter by Application */}
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-slate-400">Filter App:</span>
+            <select
+              value={filterAppId}
+              onChange={(e) => setFilterAppId(e.target.value)}
+              className="bg-slate-900 border border-slate-800 rounded-lg px-3 py-1.5 text-white text-xs focus:outline-none focus:ring-1 focus:ring-red-500/50"
+            >
+              <option value="all">All Applications</option>
+              {applications.map(app => (
+                <option key={app.id} value={app.id}>{app.name}</option>
+              ))}
+            </select>
+          </div>
         </div>
+
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="border-b border-slate-800 text-xs font-mono text-slate-400 bg-slate-950/50">
                 <th className="p-4">Key</th>
+                <th className="p-4">Application</th>
                 <th className="p-4">Status</th>
                 <th className="p-4">Level</th>
                 <th className="p-4">Duration</th>
@@ -132,15 +256,15 @@ export const LicensesView: React.FC<LicensesViewProps> = ({ licenses, applicatio
             <tbody className="divide-y divide-slate-800/60 text-sm">
               {filteredLicenses.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="p-8 text-center text-slate-500 font-mono text-xs">
-                    No license keys generated yet for this application.
+                  <td colSpan={7} className="p-8 text-center text-slate-500 font-mono text-xs">
+                    No license keys found for this application filter. Use the generator above to create some.
                   </td>
                 </tr>
               ) : (
                 filteredLicenses.map((lic) => (
                   <tr key={lic.id} className="hover:bg-slate-800/40 transition-colors">
                     <td className="p-4 font-mono text-slate-200 text-xs flex items-center gap-2">
-                      <span>{lic.key}</span>
+                      <span className="font-semibold">{lic.key}</span>
                       <button
                         onClick={() => copyToClipboard(lic.key)}
                         className="text-slate-400 hover:text-white"
@@ -148,6 +272,11 @@ export const LicensesView: React.FC<LicensesViewProps> = ({ licenses, applicatio
                       >
                         {copiedKey === lic.key ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
                       </button>
+                    </td>
+                    <td className="p-4">
+                      <span className="inline-block px-2 py-0.5 rounded bg-slate-800 text-slate-300 text-xs font-medium">
+                        {getAppName(lic.appId)}
+                      </span>
                     </td>
                     <td className="p-4">
                       <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-mono font-medium ${

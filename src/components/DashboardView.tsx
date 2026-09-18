@@ -83,7 +83,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ selectedApp, licen
       </div>
 
       {/* Stats Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
         <div className="bg-slate-900/80 border border-red-950/40 rounded-2xl p-6 relative overflow-hidden group hover:border-red-500/40 transition-all">
           <div className="flex items-center justify-between">
             <div>
@@ -119,18 +119,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ selectedApp, licen
             </div>
             <div className="w-12 h-12 rounded-xl bg-emerald-600/10 border border-emerald-500/20 flex items-center justify-center text-emerald-500 group-hover:scale-110 transition-transform">
               <ShieldCheck className="w-6 h-6" />
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-slate-900/80 border border-red-950/40 rounded-2xl p-6 relative overflow-hidden group hover:border-red-500/40 transition-all">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-xs font-medium text-slate-400 uppercase tracking-wider">API Requests</p>
-              <p className="text-3xl font-extrabold text-white mt-2">1,482</p>
-            </div>
-            <div className="w-12 h-12 rounded-xl bg-red-600/10 border border-red-500/20 flex items-center justify-center text-red-500 group-hover:scale-110 transition-transform">
-              <Activity className="w-6 h-6" />
             </div>
           </div>
         </div>
