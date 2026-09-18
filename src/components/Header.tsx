@@ -1,6 +1,17 @@
-import React from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Application } from '../types';
-import { Menu, ChevronDown, Plus, Bell, ShieldCheck } from 'lucide-react';
+import { 
+  Menu, 
+  ChevronDown, 
+  Plus, 
+  Bell, 
+  User as UserIcon, 
+  ShieldAlert, 
+  LogOut, 
+  Laptop, 
+  Settings as SettingsIcon,
+  ShieldCheck 
+} from 'lucide-react';
 
 interface HeaderProps {
   applications: Application[];
@@ -10,6 +21,10 @@ interface HeaderProps {
   onOpenMobileMenu: () => void;
   userEmail?: string;
   userPhoto?: string;
+  userDisplayName?: string;
+  onOpenProfile?: (tab?: 'profile' | 'sessions' | 'database' | 'logs') => void;
+  onLogout?: () => void;
+  onLogoutAll?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({ 
@@ -19,17 +34,36 @@ export const Header: React.FC<HeaderProps> = ({
   onNewAppClick, 
   onOpenMobileMenu,
   userEmail,
-  userPhoto
+  userPhoto,
+  userDisplayName,
+  onOpenProfile,
+  onLogout,
+  onLogoutAll
 }) => {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
   const displayEmail = userEmail || 'developer@redzone.auth';
-  const initial = displayEmail[0]?.toUpperCase() || 'D';
+  const displayName = userDisplayName || 'Developer Account';
+  const initial = (displayName || displayEmail)[0]?.toUpperCase() || 'D';
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
   return (
     <header className="h-18 bg-slate-950/80 backdrop-blur-md border-b border-red-950/40 px-4 sm:px-8 flex items-center justify-between sticky top-0 z-30">
       {/* Mobile Menu Button & Application Selector */}
       <div className="flex items-center gap-3">
         <button
           onClick={onOpenMobileMenu}
-          className="lg:hidden p-2 rounded-xl bg-slate-900 border border-red-950/60 text-slate-300 hover:text-white"
+          className="lg:hidden p-2 rounded-xl bg-slate-900 border border-red-950/60 text-slate-300 hover:text-white cursor-pointer"
         >
           <Menu className="w-5 h-5 text-red-500" />
         </button>
@@ -54,14 +88,14 @@ export const Header: React.FC<HeaderProps> = ({
 
         <button
           onClick={onNewAppClick}
-          className="hidden sm:flex items-center gap-1.5 px-3 py-2 bg-slate-900 hover:bg-slate-800 border border-red-950/60 hover:border-red-500/40 text-slate-300 rounded-xl text-xs font-medium transition-all"
+          className="hidden sm:flex items-center gap-1.5 px-3 py-2 bg-slate-900 hover:bg-slate-800 border border-red-950/60 hover:border-red-500/40 text-slate-300 rounded-xl text-xs font-medium transition-all cursor-pointer"
         >
           <Plus className="w-3.5 h-3.5 text-red-500" />
           <span>New App</span>
         </button>
       </div>
 
-      {/* Status & Actions */}
+      {/* Status & Profile Dropdown */}
       <div className="flex items-center gap-3 sm:gap-5">
         <div className="hidden md:flex items-center gap-2 bg-emerald-950/30 border border-emerald-500/20 px-3 py-1.5 rounded-full">
           <div className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
@@ -70,13 +104,21 @@ export const Header: React.FC<HeaderProps> = ({
 
         <div className="hidden sm:block h-5 w-px bg-slate-800" />
 
-        <div className="flex items-center gap-3">
-          <button className="relative p-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-red-950/60 text-slate-300 transition-colors">
+        <div className="flex items-center gap-3 relative" ref={menuRef}>
+          <button 
+            onClick={() => onOpenProfile && onOpenProfile('logs')}
+            className="relative p-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-red-950/60 text-slate-300 transition-colors cursor-pointer" 
+            title="System Notifications & Logs"
+          >
             <Bell className="w-4 h-4" />
             <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-red-500" />
           </button>
 
-          <div className="flex items-center gap-2.5 pl-1 sm:pl-2">
+          {/* Interactive Profile Badge */}
+          <button
+            onClick={() => setMenuOpen(!menuOpen)}
+            className="flex items-center gap-2.5 pl-1 sm:pl-2 p-1.5 rounded-xl hover:bg-slate-900/80 border border-transparent hover:border-red-950/50 transition-all cursor-pointer text-left"
+          >
             {userPhoto ? (
               <img 
                 src={userPhoto} 
@@ -90,10 +132,92 @@ export const Header: React.FC<HeaderProps> = ({
               </div>
             )}
             <div className="hidden md:block text-left">
-              <p className="text-xs font-semibold text-slate-200">Developer Account</p>
-              <p className="text-[10px] text-slate-400 font-mono truncate max-w-[150px]">{displayEmail}</p>
+              <p className="text-xs font-semibold text-slate-200 truncate max-w-[140px]">{displayName}</p>
+              <p className="text-[10px] text-slate-400 font-mono truncate max-w-[140px]">{displayEmail}</p>
             </div>
-          </div>
+            <ChevronDown className="w-3.5 h-3.5 text-slate-400 hidden sm:block" />
+          </button>
+
+          {/* Dropdown Menu */}
+          {menuOpen && (
+            <div className="absolute right-0 top-full mt-2 w-64 bg-slate-900 border border-red-950 rounded-2xl shadow-2xl py-2 z-50 animate-in fade-in zoom-in-95 duration-150">
+              <div className="px-4 py-2.5 border-b border-slate-800">
+                <p className="text-xs font-bold text-white truncate">{displayName}</p>
+                <p className="text-[11px] text-slate-400 font-mono truncate">{displayEmail}</p>
+                <div className="mt-1.5 inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-950/80 border border-emerald-500/30 text-[10px] font-semibold text-emerald-400">
+                  <ShieldCheck className="w-3 h-3" />
+                  <span>Verified Session</span>
+                </div>
+              </div>
+
+              <div className="py-1">
+                <button
+                  onClick={() => {
+                    setMenuOpen(false);
+                    onOpenProfile && onOpenProfile('profile');
+                  }}
+                  className="w-full px-4 py-2 text-left text-xs text-slate-300 hover:text-white hover:bg-slate-800/80 flex items-center gap-2.5 transition-colors cursor-pointer"
+                >
+                  <UserIcon className="w-4 h-4 text-red-400" />
+                  <span>Profile Settings</span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    setMenuOpen(false);
+                    onOpenProfile && onOpenProfile('sessions');
+                  }}
+                  className="w-full px-4 py-2 text-left text-xs text-slate-300 hover:text-white hover:bg-slate-800/80 flex items-center gap-2.5 transition-colors cursor-pointer"
+                >
+                  <Laptop className="w-4 h-4 text-blue-400" />
+                  <span>Active Sessions & Security</span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    setMenuOpen(false);
+                    onOpenProfile && onOpenProfile('database');
+                  }}
+                  className="w-full px-4 py-2 text-left text-xs text-slate-300 hover:text-white hover:bg-slate-800/80 flex items-center gap-2.5 transition-colors cursor-pointer"
+                >
+                  <SettingsIcon className="w-4 h-4 text-slate-400" />
+                  <span>System Preferences</span>
+                </button>
+              </div>
+
+              <div className="border-t border-slate-800/80 my-1" />
+
+              <div className="py-1">
+                <button
+                  onClick={() => {
+                    setMenuOpen(false);
+                    if (onLogoutAll) {
+                      onLogoutAll();
+                    } else if (onOpenProfile) {
+                      onOpenProfile('sessions');
+                    }
+                  }}
+                  className="w-full px-4 py-2 text-left text-xs text-red-300 hover:text-white hover:bg-red-950/60 flex items-center gap-2.5 transition-colors cursor-pointer font-medium"
+                >
+                  <ShieldAlert className="w-4 h-4 text-red-400" />
+                  <span>Logout All Sessions</span>
+                </button>
+
+                {onLogout && (
+                  <button
+                    onClick={() => {
+                      setMenuOpen(false);
+                      onLogout();
+                    }}
+                    className="w-full px-4 py-2 text-left text-xs text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 flex items-center gap-2.5 transition-colors cursor-pointer"
+                  >
+                    <LogOut className="w-4 h-4 text-slate-500" />
+                    <span>Sign Out (This Device)</span>
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </header>

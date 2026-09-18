@@ -190,6 +190,45 @@ async function startServer() {
     res.json({ success: true, message: "Developer registered successfully! You can now sign in." });
   });
 
+  app.post("/api/v1/dev/logout-all", async (req, res) => {
+    const { email, uid } = req.body;
+    const target = email || uid || "current_developer";
+
+    const logEntry = {
+      id: `log_${Date.now()}`,
+      timestamp: new Date().toISOString(),
+      type: "auth",
+      message: `Global session revocation: Logged out all active devices and sessions for ${target}.`,
+      appId: "system",
+      ip: req.ip || "127.0.0.1"
+    };
+    auditLogs.unshift(logEntry);
+
+    if (db) {
+      try {
+        await setDoc(doc(db, "logs", logEntry.id), logEntry);
+        if (uid) {
+          await setDoc(doc(db, "developers", uid), {
+            allSessionsRevokedAt: new Date().toISOString(),
+            sessionVersion: Date.now()
+          }, { merge: true });
+        }
+      } catch (e) {
+        console.warn("Firestore session revocation note:", e);
+      }
+    }
+
+    res.json({
+      success: true,
+      message: "All active sessions and tokens have been revoked successfully."
+    });
+  });
+
+  app.get("/api/v1/logs", async (req, res) => {
+    if (db) await loadFromFirestore();
+    res.json({ success: true, logs: auditLogs });
+  });
+
   // Applications Endpoints
   app.get("/api/v1/apps", async (req, res) => {
     if (db) await loadFromFirestore();

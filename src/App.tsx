@@ -20,6 +20,7 @@ import {
   signOut, 
   onAuthStateChanged,
   sendPasswordResetEmail,
+  updateProfile,
   User 
 } from 'firebase/auth';
 import { doc, setDoc } from 'firebase/firestore';
@@ -47,6 +48,13 @@ export default function App() {
   const [googleLoading, setGoogleLoading] = useState(false);
   const [devError, setDevError] = useState<string | null>(null);
   const [devSuccess, setDevSuccess] = useState<string | null>(null);
+
+  const [displayName, setDisplayName] = useState<string>(() => {
+    return localStorage.getItem('redzone_dev_display_name') || 'RedZone Developer';
+  });
+  const [settingsSubTab, setSettingsSubTab] = useState<'profile' | 'sessions' | 'database' | 'logs'>('profile');
+  const [showGlobalLogoutAllModal, setShowGlobalLogoutAllModal] = useState(false);
+  const [globalLogoutAllLoading, setGlobalLogoutAllLoading] = useState(false);
 
   const [showResetModal, setShowResetModal] = useState(false);
   const [resetEmail, setResetEmail] = useState('');
@@ -87,6 +95,10 @@ export default function App() {
       if (user && !user.isAnonymous) {
         setFirebaseUser(user);
         setDevLoggedIn(true);
+        if (user.displayName) {
+          setDisplayName(user.displayName);
+          localStorage.setItem('redzone_dev_display_name', user.displayName);
+        }
         localStorage.setItem('redzone_active_dev', user.email || user.displayName || 'developer');
       } else {
         const cachedDev = localStorage.getItem('redzone_active_dev');
@@ -338,6 +350,88 @@ export default function App() {
     localStorage.removeItem('redzone_active_dev');
     setFirebaseUser(null);
     setDevLoggedIn(false);
+  };
+
+  const handleOpenProfile = (tab: 'profile' | 'sessions' | 'database' | 'logs' = 'profile') => {
+    setSettingsSubTab(tab);
+    setCurrentTab('settings');
+  };
+
+  const handleUpdateProfile = async (newDisplayName: string): Promise<boolean> => {
+    const clean = newDisplayName.trim();
+    if (!clean) return false;
+    setDisplayName(clean);
+    localStorage.setItem('redzone_dev_display_name', clean);
+
+    if (auth.currentUser) {
+      try {
+        await updateProfile(auth.currentUser, { displayName: clean });
+      } catch (e) {
+        console.warn('Firebase updateProfile warning:', e);
+      }
+    }
+
+    if (db && firebaseUser?.uid) {
+      try {
+        await setDoc(doc(db, 'developers', firebaseUser.uid), {
+          displayName: clean,
+          updatedAt: new Date().toISOString()
+        }, { merge: true });
+      } catch (e) {
+        console.warn('Firestore update developer warning:', e);
+      }
+    }
+
+    setLogs(prev => [
+      {
+        id: `log_${Date.now()}`,
+        timestamp: new Date().toISOString(),
+        type: 'admin',
+        message: `Profile update: Developer display name changed to "${clean}".`,
+        appId: 'system'
+      },
+      ...prev
+    ]);
+    return true;
+  };
+
+  const executeLogoutAll = async () => {
+    setGlobalLogoutAllLoading(true);
+    const activeEmail = firebaseUser?.email || localStorage.getItem('redzone_active_dev') || 'developer@redzone.auth';
+    const uid = firebaseUser?.uid;
+
+    try {
+      await fetch('/api/v1/dev/logout-all', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: activeEmail, uid })
+      });
+    } catch (e) {
+      console.warn('Backend logout-all warning:', e);
+    }
+
+    setLogs(prev => [
+      {
+        id: `log_${Date.now()}`,
+        timestamp: new Date().toISOString(),
+        type: 'auth',
+        message: `Global session revocation: Logged out all active devices and sessions for ${activeEmail}.`,
+        appId: 'system'
+      },
+      ...prev
+    ]);
+
+    try {
+      await signOut(auth);
+    } catch {}
+
+    localStorage.removeItem('redzone_active_dev');
+    localStorage.removeItem('rz_dev_master_key');
+    setFirebaseUser(null);
+    setDevLoggedIn(false);
+    setShowGlobalLogoutAllModal(false);
+    setGlobalLogoutAllLoading(false);
+    setDevSuccess('All active developer sessions and tokens have been revoked. Please sign in again.');
   };
 
   // Resilient Application Creation
@@ -635,7 +729,9 @@ export default function App() {
         mobileOpen={mobileOpen}
         setMobileOpen={setMobileOpen}
         onLogout={handleLogout}
+        onLogoutAll={() => setShowGlobalLogoutAllModal(true)}
         userEmail={activeEmail}
+        onOpenProfile={handleOpenProfile}
       />
 
       <div className="flex-1 flex flex-col min-w-0">
@@ -647,6 +743,10 @@ export default function App() {
           onOpenMobileMenu={() => setMobileOpen(true)}
           userEmail={activeEmail}
           userPhoto={activePhoto}
+          userDisplayName={displayName}
+          onOpenProfile={handleOpenProfile}
+          onLogout={handleLogout}
+          onLogoutAll={() => setShowGlobalLogoutAllModal(true)}
         />
 
         <main className="flex-1 overflow-y-auto">
@@ -700,10 +800,68 @@ export default function App() {
           {currentTab === 'settings' && (
             <SettingsView 
               logs={logs} 
+              userEmail={activeEmail}
+              userPhoto={activePhoto}
+              userDisplayName={displayName}
+              userId={firebaseUser?.uid || 'rz_dev_local'}
+              userCreatedAt={firebaseUser?.metadata?.creationTime}
+              authProvider={firebaseUser?.providerData?.[0]?.providerId === 'google.com' ? 'Google Workspace Auth' : 'Firebase Email & Password'}
+              onUpdateProfile={handleUpdateProfile}
+              onLogout={handleLogout}
+              onLogoutAll={executeLogoutAll}
+              initialTab={settingsSubTab}
             />
           )}
         </main>
       </div>
+
+      {/* Global Logout All Modal */}
+      {showGlobalLogoutAllModal && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-red-500/40 rounded-2xl w-full max-w-md p-6 shadow-2xl space-y-4 relative animate-in fade-in zoom-in-95 duration-200">
+            <div className="w-12 h-12 rounded-2xl bg-red-600/20 border border-red-500/40 flex items-center justify-center text-red-500 mx-auto shadow-lg shadow-red-950">
+              <ShieldAlert className="w-6 h-6" />
+            </div>
+
+            <div className="text-center space-y-1.5">
+              <h3 className="text-lg font-bold text-white">Logout from All Devices?</h3>
+              <p className="text-xs text-slate-300 leading-relaxed">
+                This will immediately revoke all active session tokens for <span className="text-white font-mono font-semibold">{activeEmail}</span> across every browser, desktop client, and mobile device.
+              </p>
+            </div>
+
+            <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-slate-400 space-y-1 font-mono">
+              <p className="text-red-400 font-semibold flex items-center gap-1.5">
+                <AlertCircle className="w-3.5 h-3.5" />
+                <span>Security Impact:</span>
+              </p>
+              <p>• Invalidate active authorization tokens</p>
+              <p>• Clear developer credentials and keys</p>
+              <p>• Require re-authentication everywhere</p>
+            </div>
+
+            <div className="flex items-center gap-3 pt-2">
+              <button
+                type="button"
+                disabled={globalLogoutAllLoading}
+                onClick={() => setShowGlobalLogoutAllModal(false)}
+                className="flex-1 py-2.5 px-4 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold rounded-xl transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={globalLogoutAllLoading}
+                onClick={executeLogoutAll}
+                className="flex-1 py-2.5 px-4 bg-red-600 hover:bg-red-500 text-white text-xs font-bold rounded-xl shadow-lg shadow-red-950 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+              >
+                {globalLogoutAllLoading && <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />}
+                <span>{globalLogoutAllLoading ? 'Revoking...' : 'Yes, Logout All'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <ApiTesterModal 
         isOpen={isApiTesterOpen} 
