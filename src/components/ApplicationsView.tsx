@@ -18,12 +18,18 @@ export const ApplicationsView: React.FC<ApplicationsViewProps> = ({ applications
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name || loading) return;
+    const trimmedName = name.trim();
+    if (!trimmedName || loading) {
+      setError('Please provide a valid application name.');
+      return;
+    }
     setLoading(true);
     setError(null);
 
     try {
-      await onAddApp(name, version, downloadLink);
+      const cleanVersion = version.trim() || '1.0.0';
+      const cleanLink = downloadLink.trim() || 'https://redzone.auth/downloads/app.exe';
+      await onAddApp(trimmedName, cleanVersion, cleanLink);
       setName('');
       setVersion('1.0.0');
       setDownloadLink('');
@@ -146,7 +152,7 @@ export const ApplicationsView: React.FC<ApplicationsViewProps> = ({ applications
               </div>
             )}
 
-            <form onSubmit={handleSubmit} className="space-y-4">
+            <form onSubmit={handleSubmit} noValidate className="space-y-4">
               <div>
                 <label className="block text-xs font-medium text-slate-400 mb-1">Application Name</label>
                 <input
@@ -172,9 +178,9 @@ export const ApplicationsView: React.FC<ApplicationsViewProps> = ({ applications
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-slate-400 mb-1">Download Link (URL)</label>
+                <label className="block text-xs font-medium text-slate-400 mb-1">Download Link (Optional)</label>
                 <input
-                  type="url"
+                  type="text"
                   placeholder="https://redzone.auth/downloads/app.exe"
                   value={downloadLink}
                   onChange={(e) => setDownloadLink(e.target.value)}

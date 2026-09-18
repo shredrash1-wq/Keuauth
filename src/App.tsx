@@ -16,7 +16,7 @@ import { signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 import { ShieldAlert, KeyRound, Lock, User as UserIcon, CheckCircle2, AlertCircle } from 'lucide-react';
 
 export default function App() {
-  const [devLoggedIn, setDevLoggedIn] = useState(false);
+  const [devLoggedIn, setDevLoggedIn] = useState(() => !!localStorage.getItem('redzone_active_dev'));
   const [devAuthMode, setDevAuthMode] = useState<'login' | 'register'>('login');
   const [devUsername, setDevUsername] = useState('');
   const [devPassword, setDevPassword] = useState('');
@@ -117,34 +117,52 @@ export default function App() {
     setDevError(null);
     setDevSuccess(null);
 
+    const cleanUser = devUsername.trim();
+    if (!cleanUser || !devPassword) {
+      setDevError('Please enter both username and password.');
+      return;
+    }
+
     const endpoint = devAuthMode === 'login' ? '/api/v1/dev/login' : '/api/v1/dev/register';
 
     try {
       const res = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: devUsername, password: devPassword })
+        body: JSON.stringify({ username: cleanUser, password: devPassword })
       });
       const data = await res.json();
       if (data.success) {
         if (devAuthMode === 'register') {
-          setDevSuccess('Developer registered successfully! Please sign in.');
+          setDevSuccess('Developer registered successfully! Please sign in with your credentials.');
           setDevAuthMode('login');
         } else {
+          localStorage.setItem('redzone_active_dev', cleanUser);
           setDevLoggedIn(true);
         }
       } else {
         setDevError(data.message || 'Authentication failed.');
       }
     } catch (err: any) {
-      // Offline fallback
-      if (devUsername === 'admin' && devPassword === 'password123' && devAuthMode === 'login') {
-        setDevLoggedIn(true);
-      } else if (devAuthMode === 'register') {
-        setDevSuccess('Registered successfully! Please sign in.');
-        setDevAuthMode('login');
+      // Resilient local storage fallback so developer can always work without network lockouts
+      const localDevs = JSON.parse(localStorage.getItem('redzone_devs') || '[]');
+      if (devAuthMode === 'register') {
+        if (localDevs.some((d: any) => d.username.toLowerCase() === cleanUser.toLowerCase())) {
+          setDevError('Developer username already exists. Please choose another username.');
+        } else {
+          localDevs.push({ username: cleanUser, password: devPassword });
+          localStorage.setItem('redzone_devs', JSON.stringify(localDevs));
+          setDevSuccess('Developer account registered! Please sign in with your credentials.');
+          setDevAuthMode('login');
+        }
       } else {
-        setDevError('Unable to connect to server.');
+        const found = localDevs.find((d: any) => d.username.toLowerCase() === cleanUser.toLowerCase() && d.password === devPassword);
+        if (found) {
+          localStorage.setItem('redzone_active_dev', cleanUser);
+          setDevLoggedIn(true);
+        } else {
+          setDevError('Invalid developer username or password. If you have not created an account yet, click the Register tab above to create one.');
+        }
       }
     }
   };
@@ -238,7 +256,7 @@ export default function App() {
                 <input
                   type="text"
                   required
-                  placeholder="admin"
+                  placeholder="Enter your username"
                   value={devUsername}
                   onChange={(e) => setDevUsername(e.target.value)}
                   className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-10 pr-4 py-3 text-white text-sm focus:outline-none focus:ring-2 focus:ring-red-500/50"
@@ -252,7 +270,7 @@ export default function App() {
                 <input
                   type="password"
                   required
-                  placeholder="password123"
+                  placeholder="Enter your password"
                   value={devPassword}
                   onChange={(e) => setDevPassword(e.target.value)}
                   className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-10 pr-4 py-3 text-white text-sm focus:outline-none focus:ring-2 focus:ring-red-500/50"
@@ -267,9 +285,6 @@ export default function App() {
               {devAuthMode === 'login' ? 'Access Developer Console' : 'Register Developer Account'}
             </button>
           </form>
-          <div className="mt-4 text-center text-[11px] text-slate-500 font-mono">
-            Default credentials: admin / password123
-          </div>
         </div>
       </div>
     );
@@ -283,7 +298,10 @@ export default function App() {
         onOpenApiTester={() => setIsApiTesterOpen(true)}
         mobileOpen={mobileOpen}
         setMobileOpen={setMobileOpen}
-        onLogout={() => setDevLoggedIn(false)}
+        onLogout={() => {
+          localStorage.removeItem('redzone_active_dev');
+          setDevLoggedIn(false);
+        }}
       />
 
       <div className="flex-1 flex flex-col min-w-0">

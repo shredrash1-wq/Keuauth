@@ -5,18 +5,19 @@ import { initializeApp, getApps } from "firebase/app";
 import { getFirestore, collection, getDocs, doc, setDoc, deleteDoc, updateDoc, getDoc } from "firebase/firestore";
 
 const firebaseConfig = {
-  apiKey: process.env.VITE_FIREBASE_API_KEY || "AIzaSyDummyKeyForPreviewMode12345",
-  authDomain: process.env.VITE_FIREBASE_AUTH_DOMAIN || "gen-lang-client-0980948955.firebaseapp.com",
-  projectId: process.env.VITE_FIREBASE_PROJECT_ID || "gen-lang-client-0980948955",
-  storageBucket: process.env.VITE_FIREBASE_STORAGE_BUCKET || "gen-lang-client-0980948955.appspot.com",
-  messagingSenderId: process.env.VITE_FIREBASE_MESSAGING_SENDER_ID || "1234567890",
-  appId: process.env.VITE_FIREBASE_APP_ID || "1:1234567890:web:abcdef"
+  projectId: "gen-lang-client-0980948955",
+  appId: "1:235944960103:web:b55f4a9d72cbe1b6c2b4c2",
+  apiKey: "AIzaSyCkmWWpqazI2DSr4PocZWM1OqApUWXNRgc",
+  authDomain: "gen-lang-client-0980948955.firebaseapp.com",
+  firestoreDatabaseId: "ai-studio-redzoneauth-73185f29-19fd-4277-a3cf-f8fbd09dcb33",
+  storageBucket: "gen-lang-client-0980948955.firebasestorage.app",
+  messagingSenderId: "235944960103"
 };
 
 let db: any = null;
 try {
   const firebaseApp = !getApps().length ? initializeApp(firebaseConfig) : getApps()[0];
-  db = getFirestore(firebaseApp);
+  db = getFirestore(firebaseApp, firebaseConfig.firestoreDatabaseId);
 } catch (e) {
   console.log("Firebase init fallback to memory mode:", e);
 }
@@ -90,9 +91,7 @@ async function startServer() {
   let applications: Application[] = [];
   let licenseKeys: LicenseKey[] = [];
   let authUsers: AuthUser[] = [];
-  let developers: Developer[] = [
-    { id: "dev_admin", username: "admin", password: "password123" }
-  ];
+  let developers: Developer[] = [];
   let auditLogs: any[] = [
     {
       id: "log_init",
@@ -103,28 +102,36 @@ async function startServer() {
     }
   ];
 
-  // Load initial state from Firestore
+  // Load initial state from Firestore with timeout protection
   async function loadFromFirestore() {
     if (!db) return;
     try {
-      const appsSnap = await getDocs(collection(db, "applications"));
-      if (!appsSnap.empty) {
-        applications = appsSnap.docs.map(d => ({ id: d.id, ...d.data() } as Application));
-      }
-      const keysSnap = await getDocs(collection(db, "licenses"));
-      if (!keysSnap.empty) {
-        licenseKeys = keysSnap.docs.map(d => ({ id: d.id, ...d.data() } as LicenseKey));
-      }
-      const usersSnap = await getDocs(collection(db, "users"));
-      if (!usersSnap.empty) {
-        authUsers = usersSnap.docs.map(d => ({ id: d.id, ...d.data() } as AuthUser));
-      }
-      const devsSnap = await getDocs(collection(db, "developers"));
-      if (!devsSnap.empty) {
-        developers = devsSnap.docs.map(d => ({ id: d.id, ...d.data() } as Developer));
-      }
+      const syncPromise = (async () => {
+        const appsSnap = await getDocs(collection(db, "applications"));
+        if (!appsSnap.empty) {
+          applications = appsSnap.docs.map(d => ({ id: d.id, ...d.data() } as Application));
+        }
+        const keysSnap = await getDocs(collection(db, "licenses"));
+        if (!keysSnap.empty) {
+          licenseKeys = keysSnap.docs.map(d => ({ id: d.id, ...d.data() } as LicenseKey));
+        }
+        const usersSnap = await getDocs(collection(db, "users"));
+        if (!usersSnap.empty) {
+          authUsers = usersSnap.docs.map(d => ({ id: d.id, ...d.data() } as AuthUser));
+        }
+        const devsSnap = await getDocs(collection(db, "developers"));
+        if (!devsSnap.empty) {
+          developers = devsSnap.docs.map(d => ({ id: d.id, ...d.data() } as Developer));
+        }
+      })();
+
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("Firestore sync timeout")), 2500)
+      );
+
+      await Promise.race([syncPromise, timeoutPromise]);
     } catch (e) {
-      console.error("Error loading from Firestore:", e);
+      console.warn("Firestore sync warning (continuing with cached state):", e);
     }
   }
 
@@ -133,12 +140,19 @@ async function startServer() {
   // Developer Auth Endpoints
   app.post("/api/v1/dev/login", async (req, res) => {
     const { username, password } = req.body;
+    if (!username || !password) {
+      return res.json({ success: false, message: "Username and password are required." });
+    }
     if (db) {
       await loadFromFirestore();
     }
-    const dev = developers.find(d => d.username === username && d.password === password);
+    const cleanUser = String(username).trim().toLowerCase();
+    const dev = developers.find(d => d.username.toLowerCase() === cleanUser && d.password === password);
     if (!dev) {
-      return res.json({ success: false, message: "Invalid developer username or password." });
+      return res.json({ 
+        success: false, 
+        message: "Invalid credentials. If you do not have an account yet, click the 'Register' tab above to create one." 
+      });
     }
     res.json({ success: true, message: "Developer login successful!", developer: { username: dev.username } });
   });
@@ -146,15 +160,22 @@ async function startServer() {
   app.post("/api/v1/dev/register", async (req, res) => {
     const { username, password } = req.body;
     if (!username || !password) {
-      return res.json({ success: false, message: "Username and password required." });
+      return res.json({ success: false, message: "Username and password are required." });
     }
-    if (developers.some(d => d.username === username)) {
-      return res.json({ success: false, message: "Developer username already exists." });
+    const cleanUser = String(username).trim();
+    if (cleanUser.length < 3) {
+      return res.json({ success: false, message: "Username must be at least 3 characters long." });
+    }
+    if (db) {
+      await loadFromFirestore();
+    }
+    if (developers.some(d => d.username.toLowerCase() === cleanUser.toLowerCase())) {
+      return res.json({ success: false, message: "This username is already taken. Please choose another or sign in." });
     }
     const newDev: Developer = {
       id: `dev_${Date.now()}`,
-      username,
-      password
+      username: cleanUser,
+      password: String(password)
     };
     developers.push(newDev);
 
@@ -177,21 +198,22 @@ async function startServer() {
 
   app.post("/api/v1/apps", async (req, res) => {
     const { name, version, downloadLink } = req.body;
-    if (!name) {
+    const cleanName = (name || "").trim();
+    if (!cleanName) {
       return res.json({ success: false, message: "Application name is required." });
     }
 
     const newApp: Application = {
       id: `app_${Date.now()}`,
-      name: name.trim(),
+      name: cleanName,
       secret: `rz_sec_${Math.random().toString(36).substring(2, 15)}${Math.random().toString(36).substring(2, 15)}`,
       ownerid: `usr_${Math.random().toString(36).substring(2, 8)}`,
-      version: version || "1.0.0",
+      version: (version && String(version).trim()) || "1.0.0",
       status: "active",
       createdAt: new Date().toISOString(),
       totalUsers: 0,
       activeLicenses: 0,
-      downloadLink: downloadLink || "https://redzone.auth/downloads/app.exe"
+      downloadLink: (downloadLink && String(downloadLink).trim()) || "https://redzone.auth/downloads/app.exe"
     };
 
     applications.push(newApp);
