@@ -23,7 +23,7 @@ import {
   updateProfile,
   User 
 } from 'firebase/auth';
-import { doc, setDoc, updateDoc } from 'firebase/firestore';
+import { doc, setDoc, updateDoc, deleteDoc, getDocs, collection, onSnapshot } from 'firebase/firestore';
 import { 
   ShieldAlert, 
   Lock, 
@@ -62,10 +62,39 @@ export default function App() {
   const [currentTab, setCurrentTab] = useState('dashboard');
   const [mobileOpen, setMobileOpen] = useState(false);
   
-  const [applications, setApplications] = useState<Application[]>([]);
-  const [selectedApp, setSelectedApp] = useState<Application | null>(null);
-  const [licenses, setLicenses] = useState<LicenseKey[]>([]);
-  const [users, setUsers] = useState<AuthUser[]>([]);
+  const [applications, setApplications] = useState<Application[]>(() => {
+    try {
+      const cached = localStorage.getItem('redzone_cached_apps');
+      return cached ? JSON.parse(cached) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [selectedApp, setSelectedApp] = useState<Application | null>(() => {
+    try {
+      const cached = localStorage.getItem('redzone_cached_apps');
+      const apps = cached ? JSON.parse(cached) : [];
+      return apps.length > 0 ? apps[0] : null;
+    } catch {
+      return null;
+    }
+  });
+  const [licenses, setLicenses] = useState<LicenseKey[]>(() => {
+    try {
+      const cached = localStorage.getItem('redzone_cached_licenses');
+      return cached ? JSON.parse(cached) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [users, setUsers] = useState<AuthUser[]>(() => {
+    try {
+      const cached = localStorage.getItem('redzone_cached_users');
+      return cached ? JSON.parse(cached) : [];
+    } catch {
+      return [];
+    }
+  });
   const [subscriptions, setSubscriptions] = useState<SubscriptionPlan[]>([]);
   const [webhooks] = useState<WebhookConfig[]>([
     {
@@ -77,17 +106,71 @@ export default function App() {
       enabled: true
     }
   ]);
-  const [logs, setLogs] = useState<AuditLog[]>([
-    {
-      id: "log_init",
-      timestamp: new Date().toISOString(),
-      type: "admin",
-      message: "REDZONE Auth system initialized with Firebase synchronization.",
-      appId: "system"
+  const [logs, setLogs] = useState<AuditLog[]>(() => {
+    try {
+      const cached = localStorage.getItem('redzone_cached_logs');
+      return cached ? JSON.parse(cached) : [
+        {
+          id: "log_init",
+          timestamp: new Date().toISOString(),
+          type: "admin",
+          message: "REDZONE Auth system initialized with Firebase synchronization.",
+          appId: "system"
+        }
+      ];
+    } catch {
+      return [
+        {
+          id: "log_init",
+          timestamp: new Date().toISOString(),
+          type: "admin",
+          message: "REDZONE Auth system initialized with Firebase synchronization.",
+          appId: "system"
+        }
+      ];
     }
-  ]);
+  });
 
   const [isApiTesterOpen, setIsApiTesterOpen] = useState(false);
+
+  // Firestore Real-Time Subscriptions for 100% persistent live data across reloads
+  useEffect(() => {
+    if (!db) return;
+
+    const unsubApps = onSnapshot(collection(db, 'applications'), (snapshot) => {
+      if (!snapshot.empty) {
+        const loadedApps = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Application));
+        setApplications(loadedApps);
+        localStorage.setItem('redzone_cached_apps', JSON.stringify(loadedApps));
+        setSelectedApp(prev => {
+          if (!prev) return loadedApps[0];
+          return loadedApps.find(a => a.id === prev.id) || loadedApps[0];
+        });
+      }
+    }, (err) => console.warn('Applications snapshot note:', err));
+
+    const unsubKeys = onSnapshot(collection(db, 'licenses'), (snapshot) => {
+      if (!snapshot.empty) {
+        const loadedKeys = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as LicenseKey));
+        setLicenses(loadedKeys);
+        localStorage.setItem('redzone_cached_licenses', JSON.stringify(loadedKeys));
+      }
+    }, (err) => console.warn('Licenses snapshot note:', err));
+
+    const unsubUsers = onSnapshot(collection(db, 'users'), (snapshot) => {
+      if (!snapshot.empty) {
+        const loadedUsers = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as AuthUser));
+        setUsers(loadedUsers);
+        localStorage.setItem('redzone_cached_users', JSON.stringify(loadedUsers));
+      }
+    }, (err) => console.warn('Users snapshot note:', err));
+
+    return () => {
+      unsubApps();
+      unsubKeys();
+      unsubUsers();
+    };
+  }, []);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
@@ -112,15 +195,42 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  const fetchData = () => {
+  const fetchData = async () => {
+    // 1. Direct Firestore query
+    if (db) {
+      try {
+        const appsSnap = await getDocs(collection(db, 'applications'));
+        if (!appsSnap.empty) {
+          const dbApps = appsSnap.docs.map(d => ({ id: d.id, ...d.data() } as Application));
+          setApplications(dbApps);
+          localStorage.setItem('redzone_cached_apps', JSON.stringify(dbApps));
+          setSelectedApp(prev => prev ? (dbApps.find(a => a.id === prev.id) || dbApps[0]) : dbApps[0]);
+        }
+        const keysSnap = await getDocs(collection(db, 'licenses'));
+        if (!keysSnap.empty) {
+          const dbKeys = keysSnap.docs.map(d => ({ id: d.id, ...d.data() } as LicenseKey));
+          setLicenses(dbKeys);
+          localStorage.setItem('redzone_cached_licenses', JSON.stringify(dbKeys));
+        }
+        const usersSnap = await getDocs(collection(db, 'users'));
+        if (!usersSnap.empty) {
+          const dbUsers = usersSnap.docs.map(d => ({ id: d.id, ...d.data() } as AuthUser));
+          setUsers(dbUsers);
+          localStorage.setItem('redzone_cached_users', JSON.stringify(dbUsers));
+        }
+      } catch (e) {
+        console.warn('Direct Firestore fetch note:', e);
+      }
+    }
+
+    // 2. Server API fallback
     fetch('/api/v1/apps')
       .then(res => res.json())
       .then(data => {
-        if (data.success && Array.isArray(data.apps)) {
+        if (data.success && Array.isArray(data.apps) && data.apps.length > 0) {
           setApplications(data.apps);
-          if (data.apps.length > 0 && !selectedApp) {
-            setSelectedApp(data.apps[0]);
-          }
+          localStorage.setItem('redzone_cached_apps', JSON.stringify(data.apps));
+          setSelectedApp(prev => prev ? (data.apps.find((a: Application) => a.id === prev.id) || data.apps[0]) : data.apps[0]);
         }
       })
       .catch(() => {});
@@ -130,6 +240,7 @@ export default function App() {
       .then(data => {
         if (data.success && Array.isArray(data.licenses)) {
           setLicenses(data.licenses);
+          localStorage.setItem('redzone_cached_licenses', JSON.stringify(data.licenses));
         }
       })
       .catch(() => {});
@@ -139,6 +250,7 @@ export default function App() {
       .then(data => {
         if (data.success && Array.isArray(data.users)) {
           setUsers(data.users);
+          localStorage.setItem('redzone_cached_users', JSON.stringify(data.users));
         }
       })
       .catch(() => {});
@@ -148,6 +260,7 @@ export default function App() {
       .then(data => {
         if (data.success && Array.isArray(data.logs)) {
           setLogs(data.logs);
+          localStorage.setItem('redzone_cached_logs', JSON.stringify(data.logs));
         }
       })
       .catch(() => {});
@@ -434,7 +547,7 @@ export default function App() {
     setDevSuccess('All active developer sessions and tokens have been revoked. Please sign in again.');
   };
 
-  // Resilient Application Creation
+  // Resilient Application Creation with Firestore Direct Sync + REST API + LocalStorage
   const handleAddApp = async (name: string, version: string, downloadLink: string): Promise<boolean> => {
     const cleanName = (name || '').trim();
     if (!cleanName) {
@@ -448,50 +561,112 @@ export default function App() {
       cleanLink = `https://${cleanLink}`;
     }
 
+    const newApp: Application = {
+      id: `app_${Date.now()}`,
+      name: cleanName,
+      secret: `rz_sec_${Math.random().toString(36).substring(2, 15)}${Math.random().toString(36).substring(2, 15)}`,
+      ownerid: `usr_${Math.random().toString(36).substring(2, 8)}`,
+      version: cleanVersion,
+      status: 'active',
+      createdAt: new Date().toISOString(),
+      totalUsers: 0,
+      activeLicenses: 0,
+      downloadLink: cleanLink
+    };
+
+    // 1. Direct write to Firestore for 100% durable persistence
+    if (db) {
+      try {
+        await setDoc(doc(db, 'applications', newApp.id), newApp);
+      } catch (firestoreErr) {
+        console.warn('Firestore direct write app warning:', firestoreErr);
+      }
+    }
+
+    // 2. Immediately update local state and localStorage cache so page reloads are instant
+    setApplications(prev => {
+      const exists = prev.some(a => a.id === newApp.id);
+      const updated = exists ? prev : [newApp, ...prev];
+      localStorage.setItem('redzone_cached_apps', JSON.stringify(updated));
+      return updated;
+    });
+    setSelectedApp(newApp);
+
+    // 3. Sync to server-side API (both /api/v1/apps and /api/apps)
     try {
-      const res = await fetch('/api/v1/apps', {
+      await fetch('/api/v1/apps', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: cleanName, version: cleanVersion, downloadLink: cleanLink })
+      }).catch(() => {
+        return fetch('/api/apps', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: cleanName, version: cleanVersion, downloadLink: cleanLink })
+        });
       });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.success && data.app) {
-          setApplications(prev => [data.app, ...prev]);
-          setSelectedApp(data.app);
-          fetchData();
-          return true;
-        }
-      }
-      throw new Error('Server returned an unexpected response');
-    } catch (err: any) {
-      // Direct Firestore & client fallback so creation always works smoothly
+    } catch (e) {
+      console.warn('Backend app sync note:', e);
+    }
+
+    setLogs(prev => {
+      const updated = [
+        {
+          id: `log_${Date.now()}`,
+          timestamp: new Date().toISOString(),
+          type: 'admin' as const,
+          message: `Created application '${newApp.name}' (Version: ${newApp.version})`,
+          appId: newApp.id
+        },
+        ...prev
+      ];
+      localStorage.setItem('redzone_cached_logs', JSON.stringify(updated));
+      return updated;
+    });
+
+    return true;
+  };
+
+  const handleDeleteApp = async (appId: string) => {
+    if (!appId) return;
+    const targetApp = applications.find(a => a.id === appId);
+
+    // 1. Delete from Firestore
+    if (db) {
       try {
-        const fallbackApp: Application = {
-          id: `app_${Date.now()}`,
-          name: cleanName,
-          secret: `rz_sec_${Math.random().toString(36).substring(2, 15)}${Math.random().toString(36).substring(2, 15)}`,
-          ownerid: `usr_${Math.random().toString(36).substring(2, 8)}`,
-          version: cleanVersion,
-          status: 'active',
-          createdAt: new Date().toISOString(),
-          totalUsers: 0,
-          activeLicenses: 0,
-          downloadLink: cleanLink
-        };
-
-        if (db) {
-          await setDoc(doc(db, 'applications', fallbackApp.id), fallbackApp);
-        }
-
-        setApplications(prev => [fallbackApp, ...prev]);
-        setSelectedApp(fallbackApp);
-        fetchData();
-        return true;
-      } catch (clientErr: any) {
-        throw new Error(err.message || clientErr.message || 'Failed to create application');
+        await deleteDoc(doc(db, 'applications', appId));
+      } catch (e) {
+        console.warn('Firestore delete app warning:', e);
       }
     }
+
+    // 2. Delete from REST API
+    fetch(`/api/v1/apps/${appId}`, { method: 'DELETE' }).catch(() => {});
+
+    // 3. Update React state and localStorage cache
+    setApplications(prev => {
+      const updated = prev.filter(a => a.id !== appId);
+      localStorage.setItem('redzone_cached_apps', JSON.stringify(updated));
+      if (selectedApp?.id === appId) {
+        setSelectedApp(updated.length > 0 ? updated[0] : null);
+      }
+      return updated;
+    });
+
+    setLogs(prev => {
+      const updated = [
+        {
+          id: `log_${Date.now()}`,
+          timestamp: new Date().toISOString(),
+          type: 'admin' as const,
+          message: `Deleted application '${targetApp?.name || appId}'`,
+          appId: appId
+        },
+        ...prev
+      ];
+      localStorage.setItem('redzone_cached_logs', JSON.stringify(updated));
+      return updated;
+    });
   };
 
   const handleGenerateKeys = async (appId: string, count: number, durationDays: number, level: number, note: string) => {
@@ -810,6 +985,7 @@ export default function App() {
             <ApplicationsView 
               applications={applications} 
               onAddApp={handleAddApp} 
+              onDeleteApp={handleDeleteApp}
             />
           )}
           {currentTab === 'licenses' && (

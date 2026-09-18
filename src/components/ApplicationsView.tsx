@@ -5,10 +5,13 @@ import { Layers, Plus, Copy, Check, ExternalLink, ShieldCheck, Trash2, AlertCirc
 interface ApplicationsViewProps {
   applications: Application[];
   onAddApp: (name: string, version: string, downloadLink: string) => Promise<boolean> | void;
+  onDeleteApp?: (appId: string) => Promise<void> | void;
 }
 
-export const ApplicationsView: React.FC<ApplicationsViewProps> = ({ applications, onAddApp }) => {
+export const ApplicationsView: React.FC<ApplicationsViewProps> = ({ applications, onAddApp, onDeleteApp }) => {
   const [showModal, setShowModal] = useState(false);
+  const [deleteConfirmAppId, setDeleteConfirmAppId] = useState<string | null>(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
   const [name, setName] = useState('');
   const [version, setVersion] = useState('1.0.0');
   const [downloadLink, setDownloadLink] = useState('');
@@ -43,6 +46,19 @@ export const ApplicationsView: React.FC<ApplicationsViewProps> = ({ applications
       setError(err.message || 'Failed to create application');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleDelete = async (appId: string) => {
+    if (!onDeleteApp) return;
+    setDeleteLoading(true);
+    try {
+      await onDeleteApp(appId);
+      setDeleteConfirmAppId(null);
+    } catch (err: any) {
+      console.error('Delete app error:', err);
+    } finally {
+      setDeleteLoading(false);
     }
   };
 
@@ -129,18 +145,64 @@ export const ApplicationsView: React.FC<ApplicationsViewProps> = ({ applications
 
               <div className="pt-4 border-t border-slate-800/80 flex items-center justify-between text-xs">
                 <span className="text-slate-500 font-mono">Created: {new Date(app.createdAt).toLocaleDateString()}</span>
-                <a
-                  href={app.downloadLink}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-red-400 hover:text-red-300 flex items-center gap-1 font-medium"
-                >
-                  <span>Download Build</span>
-                  <ExternalLink className="w-3.5 h-3.5" />
-                </a>
+                <div className="flex items-center gap-3">
+                  <a
+                    href={app.downloadLink}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-red-400 hover:text-red-300 flex items-center gap-1 font-medium"
+                  >
+                    <span>Download Build</span>
+                    <ExternalLink className="w-3.5 h-3.5" />
+                  </a>
+                  {onDeleteApp && (
+                    <button
+                      onClick={() => setDeleteConfirmAppId(app.id)}
+                      title="Delete application"
+                      className="p-1.5 text-slate-500 hover:text-red-400 hover:bg-red-950/30 rounded-lg transition-all"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Confirmation Modal for Deleting Application */}
+      {deleteConfirmAppId && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-red-950/80 rounded-2xl w-full max-w-sm p-6 shadow-2xl space-y-4">
+            <div className="w-12 h-12 rounded-xl bg-red-950/60 border border-red-500/40 flex items-center justify-center text-red-500 mx-auto">
+              <Trash2 className="w-6 h-6" />
+            </div>
+            <div className="text-center">
+              <h3 className="text-base font-bold text-white">Delete Application</h3>
+              <p className="text-xs text-slate-400 mt-1">
+                Are you sure you want to delete this application? This action cannot be undone.
+              </p>
+            </div>
+            <div className="flex justify-end gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setDeleteConfirmAppId(null)}
+                className="flex-1 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium rounded-xl transition-all"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={deleteLoading}
+                onClick={() => handleDelete(deleteConfirmAppId)}
+                className="flex-1 py-2.5 bg-red-600 hover:bg-red-500 text-white text-xs font-bold rounded-xl shadow-lg shadow-red-950 transition-all disabled:opacity-50 flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                {deleteLoading && <div className="w-3.5 h-3.5 border-2 border-white/20 border-t-white rounded-full animate-spin" />}
+                <span>{deleteLoading ? 'Deleting...' : 'Delete'}</span>
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

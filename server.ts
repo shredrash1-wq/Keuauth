@@ -314,6 +314,32 @@ async function startServer() {
     res.json({ success: true, app: newApp });
   });
 
+  app.delete("/api/v1/apps/:id", async (req, res) => {
+    const { id } = req.params;
+    applications = applications.filter(a => a.id !== id);
+    if (db) {
+      try {
+        await deleteDoc(doc(db, "applications", id));
+      } catch (e) {
+        console.error("Firestore delete app error:", e);
+      }
+    }
+    res.json({ success: true, message: `Application ${id} deleted successfully` });
+  });
+
+  app.post("/api/v1/apps/:id/delete", async (req, res) => {
+    const { id } = req.params;
+    applications = applications.filter(a => a.id !== id);
+    if (db) {
+      try {
+        await deleteDoc(doc(db, "applications", id));
+      } catch (e) {
+        console.error("Firestore delete app error:", e);
+      }
+    }
+    res.json({ success: true, message: `Application ${id} deleted successfully` });
+  });
+
   // Licenses Endpoints
   app.get("/api/v1/licenses", async (req, res) => {
     if (db) await loadFromFirestore();
