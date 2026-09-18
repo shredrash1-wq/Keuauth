@@ -43,24 +43,60 @@ export const ClientAuthPortal: React.FC<ClientAuthPortalProps> = ({ applications
     setSuccessMsg(null);
 
     const app = applications.find(a => a.id === selectedAppId) || applications[0];
-    const endpoint = '/api/v1/client/auth';
+    const payload = {
+      type: authMode,
+      key: licenseKey.trim(),
+      username: username.trim(),
+      password: password,
+      name: app?.name || 'Redzone',
+      ownerid: app?.ownerid || 'usr_yedagf',
+      hwid: hwid
+    };
 
     try {
-      const res = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          type: authMode,
-          key: licenseKey.trim(),
-          username: username.trim(),
-          password: password,
-          name: app?.name || 'RedZone Core App',
-          ownerid: app?.ownerid || 'usr_redzone',
-          hwid: hwid
-        })
-      });
+      // Primary call to secure server-side proxy /api/auth (no frontend secrets exposed)
+      let res: Response;
+      try {
+        res = await fetch('/api/auth', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+      } catch (networkErr: any) {
+        // Fallback directly to client auth route if /api/auth network connection fails
+        try {
+          res = await fetch('/api/v1/client/auth', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+            body: JSON.stringify(payload)
+          });
+        } catch {
+          throw networkErr;
+        }
+      }
 
-      const data = await res.json();
+      // If /api/auth returned 404 (e.g. standalone routing edge case), try /api/v1/client/auth
+      if (res.status === 404) {
+        try {
+          const fallbackRes = await fetch('/api/v1/client/auth', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+            body: JSON.stringify(payload)
+          });
+          if (fallbackRes.ok || fallbackRes.status < 500) {
+            res = fallbackRes;
+          }
+        } catch {}
+      }
+
+      let data: any;
+      const contentType = res.headers.get('content-type') || '';
+      if (contentType.includes('application/json')) {
+        data = await res.json();
+      } else {
+        const text = await res.text();
+        throw new Error(text || `Server returned status code ${res.status}`);
+      }
 
       if (res.ok && data.success) {
         if (authMode === 'register') {
@@ -84,10 +120,21 @@ export const ClientAuthPortal: React.FC<ClientAuthPortalProps> = ({ applications
           sessionStorage.setItem('redzone_session', JSON.stringify(userSession));
         }
       } else {
-        setError(data.message || `Authentication failed with status ${res.status}`);
+        // Clear specific error messages returned by server
+        if (data.message) {
+          setError(data.message);
+        } else if (res.status === 404) {
+          setError('Invalid license key or application not found on server.');
+        } else if (res.status === 401 || res.status === 403) {
+          setError('Authentication rejected: Invalid credentials or key is banned/frozen.');
+        } else if (res.status >= 500) {
+          setError(`Redzone authentication server error (${res.status}): Please try again later.`);
+        } else {
+          setError(`Authentication failed (HTTP ${res.status}).`);
+        }
       }
     } catch (err: any) {
-      setError(`Unable to connect to RedZone authentication server: ${err.message || 'Network error'}`);
+      setError(`Unable to connect to Redzone authentication server: ${err.message || 'Network error'}`);
     } finally {
       setLoading(false);
     }

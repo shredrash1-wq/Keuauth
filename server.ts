@@ -120,16 +120,16 @@ async function startServer() {
   function ensureDefaultApp(): Application {
     if (applications.length === 0) {
       const defApp: Application = {
-        id: "app_default",
-        name: "Default App",
-        secret: "rz_sec_default_key_9981249",
-        ownerid: "usr_admin",
-        version: "1.0.0",
+        id: "app_redzone_default",
+        name: process.env.REDZONE_APP_NAME || "Redzone",
+        secret: process.env.REDZONE_APP_SECRET || "rz_sec_redzone_secure_9981249",
+        ownerid: process.env.REDZONE_OWNER_ID || "usr_yedagf",
+        version: process.env.REDZONE_APP_VERSION || "1.0.0",
         status: "active",
         createdAt: new Date().toISOString(),
         totalUsers: 0,
         activeLicenses: 0,
-        downloadLink: "https://redzone.auth/downloads/app.exe"
+        downloadLink: "https://redzone.auth/downloads/Redzone_Loader.exe"
       };
       applications.push(defApp);
       if (db) {
@@ -502,76 +502,180 @@ async function startServer() {
     res.json({ success: true, user });
   });
 
-  // Client Auth API Endpoint (KeyAuth compatible REST interface)
-  app.post("/api/v1/client/auth", async (req, res) => {
+  // Client Auth API Endpoint (Supports both /api/auth and /api/v1/client/auth)
+  const handleClientAuth = async (req: express.Request, res: express.Response) => {
     if (db) await loadFromFirestore();
-    const { type, key, username, password, hwid, name } = req.body;
-    const clientIp = req.ip || "127.0.0.1";
+    const { type = 'license', key, username, password, hwid, name, ownerid } = req.body;
+    const clientIp = (req.headers['x-forwarded-for'] as string)?.split(',')[0] || req.ip || "127.0.0.1";
 
-    let app = applications.find(a => a.name.toLowerCase() === (name || "").toLowerCase());
+    let app = applications.find(a => 
+      (name && a.name.toLowerCase() === String(name).trim().toLowerCase()) ||
+      (ownerid && a.ownerid.toLowerCase() === String(ownerid).trim().toLowerCase())
+    );
     if (!app && name) {
-      app = applications.find(a => a.name.toLowerCase().includes(name.toLowerCase()));
+      app = applications.find(a => 
+        a.name.toLowerCase().includes(String(name).trim().toLowerCase()) || 
+        String(name).trim().toLowerCase().includes(a.name.toLowerCase())
+      );
     }
     if (!app) {
-      app = applications[0];
+      app = applications[0] || ensureDefaultApp();
     }
 
     if (!app) {
-      return res.json({ success: false, message: "Application not found or invalid app name." });
+      return res.status(404).json({ success: false, message: "Application not found or invalid app name/owner." });
     }
 
+    // Mode: Register Account
+    if (type === 'register') {
+      if (!username || !password) {
+        return res.status(400).json({ success: false, message: "Username and password are required for registration." });
+      }
+      const cleanUser = String(username).trim();
+      const cleanPass = String(password).trim();
+      if (cleanUser.length < 2) {
+        return res.status(400).json({ success: false, message: "Username must be at least 2 characters." });
+      }
+      if (cleanPass.length < 3) {
+        return res.status(400).json({ success: false, message: "Password must be at least 3 characters." });
+      }
+
+      if (authUsers.some(u => u.username.toLowerCase() === cleanUser.toLowerCase() && u.appId === app!.id)) {
+        return res.status(400).json({ success: false, message: `Username "${cleanUser}" is already taken. Please choose another.` });
+      }
+
+      const newUser: AuthUser = {
+        id: `u_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+        username: cleanUser,
+        password: cleanPass,
+        appId: app.id,
+        durationDays: 30,
+        level: 1,
+        created: new Date().toISOString(),
+        lastLogin: new Date().toISOString(),
+        banned: false,
+        hwid: hwid || "BROWSER_CLIENT"
+      };
+
+      authUsers.unshift(newUser);
+      app.totalUsers = (app.totalUsers || 0) + 1;
+
+      if (db) {
+        try {
+          await setDoc(doc(db, "users", newUser.id), newUser);
+          await updateDoc(doc(db, "applications", app.id), { totalUsers: app.totalUsers });
+        } catch (e) {
+          console.error("Firestore register user error:", e);
+        }
+      }
+
+      return res.status(200).json({
+        success: true,
+        message: "Account registered successfully! You can now sign in.",
+        user: { username: newUser.username, level: newUser.level }
+      });
+    }
+
+    // Mode: Reset HWID
+    if (type === 'reset_hwid') {
+      if (username) {
+        const user = authUsers.find(u => u.username.toLowerCase() === String(username).trim().toLowerCase() && u.appId === app!.id);
+        if (!user) {
+          return res.status(404).json({ success: false, message: "User account not found." });
+        }
+        if (password && user.password !== password) {
+          return res.status(401).json({ success: false, message: "Invalid password for HWID reset." });
+        }
+        user.hwid = undefined;
+        if (db) {
+          try { await updateDoc(doc(db, "users", user.id), { hwid: null }); } catch {}
+        }
+        return res.status(200).json({ success: true, message: "HWID reset successfully! You can now sign in on any device." });
+      } else if (key) {
+        const cleanKey = String(key).trim();
+        const foundKey = licenseKeys.find(k => k.key.toUpperCase() === cleanKey.toUpperCase() && k.appId === app!.id);
+        if (!foundKey) {
+          return res.status(404).json({ success: false, message: "License key not found." });
+        }
+        foundKey.hwid = undefined;
+        if (db) {
+          try { await updateDoc(doc(db, "licenses", foundKey.id), { hwid: null }); } catch {}
+        }
+        return res.status(200).json({ success: true, message: "License HWID lock cleared successfully." });
+      } else {
+        return res.status(400).json({ success: false, message: "Please provide either username or license key to reset HWID." });
+      }
+    }
+
+    // Mode: User/Password Login
     if (type === 'login' || type === 'user') {
       if (!username || !password) {
-        return res.json({ success: false, message: "Username and password required." });
+        return res.status(400).json({ success: false, message: "Username and password are required." });
       }
-      const user = authUsers.find(u => u.username === username && u.appId === app.id);
+      const cleanUser = String(username).trim();
+      const user = authUsers.find(u => u.username.toLowerCase() === cleanUser.toLowerCase() && (u.appId === app!.id || applications.length <= 1));
       if (!user || user.password !== password) {
-        return res.json({ success: false, message: "Invalid username or password." });
+        return res.status(401).json({ success: false, message: "Invalid username or password." });
       }
       if (user.banned) {
-        return res.json({ success: false, message: `Account is banned: ${user.banReason || 'Violation'}` });
+        return res.status(403).json({ success: false, message: `Account is banned: ${user.banReason || 'Violation'}` });
       }
 
       user.lastLogin = new Date().toISOString();
       if (hwid) user.hwid = hwid;
 
-      return res.json({
+      if (db) {
+        try {
+          await updateDoc(doc(db, "users", user.id), { lastLogin: user.lastLogin, hwid: user.hwid });
+        } catch {}
+      }
+
+      return res.status(200).json({
         success: true,
         message: "Authenticated successfully via User/Pass!",
         userinfo: {
           username: user.username,
           subscriptions: [
             {
-              subscription: `Level ${user.level} Access`,
-              expiry: new Date(Date.now() + user.durationDays * 86400000).toISOString(),
-              level: user.level
+              subscription: `Level ${user.level} Access (${user.durationDays || 30} Days)`,
+              expiry: new Date(Date.now() + (user.durationDays || 30) * 86400000).toISOString(),
+              level: user.level || 1
             }
           ],
           ip: clientIp,
-          hwid: user.hwid || "N/A",
-          createdate: user.created,
+          hwid: user.hwid || hwid || "BROWSER_CLIENT",
+          createdate: user.created || new Date().toISOString(),
           lastlogin: user.lastLogin
         }
       });
     }
 
-    // License key auth
-    const foundKey = licenseKeys.find(k => k.key === key && k.appId === app.id);
+    // Mode: License Key Authentication
+    const cleanKey = key ? String(key).trim() : "";
+    if (!cleanKey) {
+      return res.status(400).json({ success: false, message: "License key is required for authentication." });
+    }
+
+    let foundKey = licenseKeys.find(k => k.key.toUpperCase() === cleanKey.toUpperCase() && k.appId === app!.id);
     if (!foundKey) {
-      return res.json({ success: false, message: "Invalid license key or key not found." });
+      foundKey = licenseKeys.find(k => k.key.toUpperCase() === cleanKey.toUpperCase());
+    }
+
+    if (!foundKey) {
+      return res.status(404).json({ success: false, message: "Invalid license key or key not found." });
     }
     if (foundKey.status === 'banned') {
-      return res.json({ success: false, message: "This license key is banned." });
+      return res.status(403).json({ success: false, message: "This license key is banned." });
     }
     if (foundKey.status === 'frozen') {
-      return res.json({ success: false, message: "This license key is currently frozen." });
+      return res.status(403).json({ success: false, message: "This license key is currently frozen." });
     }
 
     foundKey.status = 'used';
     if (hwid) foundKey.hwid = hwid;
     else if (!foundKey.hwid) foundKey.hwid = "BROWSER_CLIENT";
     foundKey.usedAt = new Date().toISOString();
-    foundKey.usedBy = foundKey.usedBy || "ClientUser";
+    foundKey.usedBy = foundKey.usedBy || (username ? String(username).trim() : "VerifiedUser");
 
     if (db) {
       try {
@@ -579,7 +683,7 @@ async function startServer() {
       } catch {}
     }
 
-    return res.json({
+    return res.status(200).json({
       success: true,
       message: "Successfully authenticated with REDZONE Auth!",
       userinfo: {
@@ -597,7 +701,10 @@ async function startServer() {
         lastlogin: new Date().toISOString()
       }
     });
-  });
+  };
+
+  app.post("/api/auth", handleClientAuth);
+  app.post("/api/v1/client/auth", handleClientAuth);
 
   app.get("/api/v1/authorized-domains", (req, res) => {
     res.json({

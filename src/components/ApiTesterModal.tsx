@@ -26,21 +26,39 @@ export const ApiTesterModal: React.FC<ApiTesterModalProps> = ({ isOpen, onClose,
     const app = applications.find(a => a.id === selectedAppId);
 
     try {
-      const res = await fetch('/api/v1/client/auth', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          type: 'license',
-          key: keyInput,
-          name: app?.name || 'RedZone Loader v2',
-          ownerid: app?.ownerid || 'usr_redzone_admin',
-          hwid: hwidInput
-        })
-      });
+      let res: Response;
+      try {
+        res = await fetch('/api/auth', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            type: 'license',
+            key: keyInput,
+            name: app?.name || 'Redzone',
+            ownerid: app?.ownerid || 'usr_yedagf',
+            hwid: hwidInput
+          })
+        });
+      } catch {
+        res = await fetch('/api/v1/client/auth', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            type: 'license',
+            key: keyInput,
+            name: app?.name || 'Redzone',
+            ownerid: app?.ownerid || 'usr_yedagf',
+            hwid: hwidInput
+          })
+        });
+      }
       const data = await res.json();
       setResponseResult(JSON.stringify(data, null, 2));
-    } catch (err) {
-      setResponseResult(JSON.stringify({ success: false, error: 'Network request failed' }, null, 2));
+    } catch (err: any) {
+      setResponseResult(JSON.stringify({ 
+        success: false, 
+        message: `Unable to connect to Redzone authentication server: ${err.message || 'Network request failed'}` 
+      }, null, 2));
     } finally {
       setLoading(false);
     }
